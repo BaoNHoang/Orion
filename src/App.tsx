@@ -534,10 +534,10 @@ function App() {
 
   const voicePhase = speaking ? 'speaking' : thinking || councilRunning ? 'thinking' : voiceActive ? 'listening' : 'idle'
   const voiceStatus = {
-    idle: { title: 'Voice session paused', detail: 'Select the centre control when you are ready.' },
-    listening: { title: 'Listening', detail: 'Speak naturally. Orion will respond when you finish.' },
-    thinking: { title: councilRunning ? 'Astrium is deliberating' : 'Considering your request', detail: 'Orion is preparing a response.' },
-    speaking: { title: 'Orion is speaking', detail: 'The microphone will resume when he has finished.' },
+    idle: { title: 'Voice session paused' },
+    listening: { title: 'Listening' },
+    thinking: { title: councilRunning ? 'Astrium is deliberating' : 'Considering your request' },
+    speaking: { title: 'Orion is speaking' },
   }[voicePhase]
 
   return (
@@ -625,20 +625,14 @@ function App() {
           <div className="voice-presence-wrap">
             <span className="voice-ring voice-ring-outer" aria-hidden="true" />
             <span className="voice-ring voice-ring-inner" aria-hidden="true" />
-            <button type="button" className="voice-presence" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'}>
+            <button type="button" className="voice-presence" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'}>
               <span className="voice-bars" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</span>
               <OrionIcon name={voiceActive ? 'mic' : 'mic-off'} size={25} />
             </button>
           </div>
           <div className="voice-state-copy" aria-live="polite">
             <h3>{voiceStatus.title}</h3>
-            <p>{voiceStatus.detail}</p>
           </div>
-          <button type="button" className={`voice-session-control ${voiceActive ? 'active' : ''}`} onClick={toggleVoice}>
-            <OrionIcon name={voiceActive ? 'mic-off' : 'mic'} size={17} />
-            {voiceActive ? 'End voice session' : 'Begin voice session'}
-          </button>
-          <p className="voice-privacy">Audio is not retained by Orion.</p>
         </section>}
       </section>
 
