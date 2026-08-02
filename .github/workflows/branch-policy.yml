@@ -2,20 +2,29 @@ name: Branch policy
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
 
 jobs:
-  release-source:
+  promotion-path:
     runs-on: ubuntu-latest
     steps:
-      - name: Require develop or hotfix source
+      - name: Require feature branches to pass through develop
         env:
+          BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [[ "$HEAD_REF" != "develop" && "$HEAD_REF" != hotfix/* ]]; then
-            echo "Pull requests into main must come from develop or hotfix/*."
+          if [[ "$BASE_REF" == "main" && "$HEAD_REF" != "develop" ]]; then
+            echo "Pull requests into main must come from develop."
+            echo "Merge $HEAD_REF into develop first, then open a develop-to-main pull request."
             exit 1
           fi
+
+          if [[ "$BASE_REF" == "develop" && ( "$HEAD_REF" == "main" || "$HEAD_REF" == "develop" ) ]]; then
+            echo "Pull requests into develop must come from a feature or maintenance branch."
+            exit 1
+          fi
+
+          echo "Valid promotion path: $HEAD_REF -> $BASE_REF"
