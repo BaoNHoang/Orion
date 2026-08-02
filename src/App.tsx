@@ -88,6 +88,24 @@ function combineTurnContent(turn: QueuedTurn, clarifications: QueuedTurn[]) {
   return `The user continued while you were considering the request. Treat the later messages as corrections or clarifications, preserve the user's final intent, and answer only the corrected request.\n\nOriginal request: ${turn.content}\n${additions}`
 }
 
+function normalizeSpeech(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function isLikelySpeechEcho(transcript: string, spokenText: string) {
+  const heard = normalizeSpeech(transcript)
+  const spoken = normalizeSpeech(spokenText)
+  if (!heard || !spoken) return false
+
+  const heardWords = heard.split(' ')
+  if (heardWords.length < 2) return !/^(stop|wait|cancel|orion)$/.test(heard)
+  if (spoken.includes(heard)) return true
+
+  const spokenWords = new Set(spoken.split(' '))
+  const overlap = heardWords.filter((word) => spokenWords.has(word)).length
+  return heardWords.length >= 4 && overlap / heardWords.length >= 0.8
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
@@ -136,6 +154,7 @@ function App() {
   const recognitionRef = useRef<any>(null)
   const thinkingRef = useRef(false)
   const speakingRef = useRef(false)
+  const spokenTextRef = useRef('')
   const speechGenerationRef = useRef(0)
   const messagesRef = useRef<Message[]>([])
   const turnQueueRef = useRef<QueuedTurn[]>([])
@@ -411,12 +430,11 @@ function App() {
     if (!('speechSynthesis' in window)) return
     if (!force && !autoSpeak && !voiceModeRef.current) return
     const speechGeneration = ++speechGenerationRef.current
-    recognitionRef.current?.stop()
-    recognitionRef.current = null
     speakingRef.current = true
     window.speechSynthesis.cancel()
     window.speechSynthesis.resume()
     const spokenText = text.replace(/```[\s\S]*?```/g, ' code omitted ').replace(/[*_#`~>|[\](){}]/g, ' ').replace(/\s+/g, ' ').trim()
+    spokenTextRef.current = spokenText
     const utterance = new SpeechSynthesisUtterance(spokenText)
     const voices = window.speechSynthesis.getVoices()
     const selectedVoice = voices.find((voice) => voice.voiceURI === selectedVoiceURI)
@@ -428,16 +446,18 @@ function App() {
     const finishSpeaking = () => {
       if (speechGenerationRef.current !== speechGeneration) return
       speakingRef.current = false
+      spokenTextRef.current = ''
       setSpeaking(false)
       if (voiceModeRef.current) beginListening()
     }
     utterance.onend = finishSpeaking
     utterance.onerror = finishSpeaking
     window.speechSynthesis.speak(utterance)
+    if (voiceModeRef.current) beginListening()
   }
 
   function beginListening() {
-    if (!voiceModeRef.current || speakingRef.current || recognitionRef.current) return
+    if (!voiceModeRef.current || recognitionRef.current) return
     const Recognition = (window as unknown as { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any }).SpeechRecognition
       ?? (window as unknown as { webkitSpeechRecognition?: new () => any }).webkitSpeechRecognition
     if (!Recognition) {
@@ -452,6 +472,14 @@ function App() {
     recognition.continuous = false
     recognition.onresult = (event: any) => {
       const transcript = Array.from(event.results).slice(event.resultIndex).map((result: any) => result[0].transcript).join('')
+      if (speakingRef.current && isLikelySpeechEcho(transcript, spokenTextRef.current)) return
+      if (speakingRef.current) {
+        speechGenerationRef.current += 1
+        speakingRef.current = false
+        spokenTextRef.current = ''
+        window.speechSynthesis.cancel()
+        setSpeaking(false)
+      }
       setDraft(transcript)
       if (composerRef.current) {
         composerRef.current.style.height = 'auto'
@@ -469,11 +497,11 @@ function App() {
     }
     recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null
-      if (voiceModeRef.current && !speakingRef.current && !voiceSubmitTimer.current) window.setTimeout(beginListening, 350)
+      if (voiceModeRef.current && !voiceSubmitTimer.current) window.setTimeout(beginListening, 350)
     }
     recognition.onerror = () => {
       recognitionRef.current = null
-      if (voiceModeRef.current && !speakingRef.current) window.setTimeout(beginListening, 600)
+      if (voiceModeRef.current) window.setTimeout(beginListening, 600)
     }
     recognition.start()
   }
@@ -533,6 +561,7 @@ function App() {
       recognitionRef.current = null
       speechGenerationRef.current += 1
       speakingRef.current = false
+      spokenTextRef.current = ''
       window.speechSynthesis?.cancel()
       setSpeaking(false)
       stopVoiceMeter()
@@ -699,7 +728,7 @@ function App() {
     idle: { title: 'Voice session paused' },
     listening: { title: 'Listening' },
     thinking: { title: councilRunning ? 'Astrium is deliberating' : voiceActive ? 'Listening while considering' : 'Considering your request' },
-    speaking: { title: 'Orion is speaking' },
+    speaking: { title: voiceActive ? 'Speaking and listening' : 'Orion is speaking' },
   }[voicePhase]
 
   return (
