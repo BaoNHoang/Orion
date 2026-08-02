@@ -1,22 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import {
-  Bell,
-  Bot,
-  ChevronDown,
-  Command,
-  Compass,
-  Mic,
-  MicOff,
-  PanelRight,
-  Plus,
-  Search,
-  Settings,
-  Sparkles,
-  Trash2,
-  X,
-} from 'lucide-react'
 import './App.css'
+import { OrionIcon } from './components/OrionIcon'
 
 type Message = {
   id: number
@@ -540,11 +525,11 @@ function App() {
           <img src="/orion-logo.svg" alt="" />
         </div>
         <nav className="rail-nav">
-          <button className="rail-button active" title="Command centre" onClick={() => { setSearchOpen(false); setNotificationsOpen(false); setSettingsOpen(false) }}><Command size={19} /></button>
-          <button className="rail-button" title="Search conversations" onClick={() => setSearchOpen(true)}><Search size={19} /></button>
-          <button className="rail-button" title="System status" onClick={() => setNotificationsOpen(true)}><Bell size={19} /></button>
+          <button className="rail-button active" title="Command centre" onClick={() => { setSearchOpen(false); setNotificationsOpen(false); setSettingsOpen(false) }}><OrionIcon name="command" size={19} /></button>
+          <button className="rail-button" title="Search conversations" onClick={() => setSearchOpen(true)}><OrionIcon name="search" size={19} /></button>
+          <button className="rail-button" title="System status" onClick={() => setNotificationsOpen(true)}><OrionIcon name="bell" size={19} /></button>
         </nav>
-        <button className="rail-button rail-bottom" title="Settings" onClick={() => setSettingsOpen(true)}><Settings size={19} /></button>
+        <button className="rail-button rail-bottom" title="Settings" onClick={() => setSettingsOpen(true)}><OrionIcon name="settings" size={19} /></button>
       </aside>
 
       <aside className="sidebar">
@@ -554,17 +539,17 @@ function App() {
           </div>
         </header>
 
-        <button className="new-conversation" onClick={startNewConversation} disabled={creatingConversation}>{creatingConversation ? <Bot size={16} /> : <Plus size={16} />} {creatingConversation ? 'Preparing conversation' : 'New conversation'}</button>
+        <button className="new-conversation" onClick={startNewConversation} disabled={creatingConversation}><OrionIcon name={creatingConversation ? 'council' : 'plus'} size={16} /> {creatingConversation ? 'Preparing conversation' : 'New conversation'}</button>
 
         <section className="workspace-section">
-          <div className="section-label"><span>Workspaces</span><button title="Create workspace" onClick={() => setWorkspaceOpen(true)}><Plus size={15} /></button></div>
+          <div className="section-label"><span>Workspaces</span><button title="Create workspace" onClick={() => setWorkspaceOpen(true)}><OrionIcon name="plus" size={15} /></button></div>
           <button className={`workspace ${activeWorkspace === 'Inbox' ? 'active' : ''}`} onClick={() => setActiveWorkspace('Inbox')}><span className="workspace-dot inbox" />Inbox <span className="count">{conversations.filter((conversation) => conversation.workspace === 'Inbox').length}</span></button>
           {workspaces.filter((workspace) => workspace.name !== 'Inbox').map((workspace) => <button className={`workspace ${activeWorkspace === workspace.name ? 'active' : ''}`} onClick={() => setActiveWorkspace(workspace.name)} key={workspace.id}><span className={`workspace-dot ${workspace.color}`} />{workspace.name}</button>)}
         </section>
 
         <section className="workspace-section recent-section">
           <div className="section-label"><span>Recent</span></div>
-          {visibleConversations.slice(0, 20).map((conversation) => <div className={`recent-row ${conversation.id === activeConversationId ? 'active-chat' : ''}`} key={conversation.id}><button className="recent-chat" onClick={() => loadEarlierConversation(conversation.id)}>{conversation.title}<span>{conversation.message_count} messages</span></button><button className="delete-chat" title="Delete chat" onClick={() => setPendingDelete(conversation)}><Trash2 size={13} /></button></div>)}
+          {visibleConversations.slice(0, 20).map((conversation) => <div className={`recent-row ${conversation.id === activeConversationId ? 'active-chat' : ''}`} key={conversation.id}><button className="recent-chat" onClick={() => loadEarlierConversation(conversation.id)}>{conversation.title}<span>{conversation.message_count} messages</span></button><button className="delete-chat" title="Delete chat" onClick={() => setPendingDelete(conversation)}><OrionIcon name="trash" size={13} /></button></div>)}
           {visibleConversations.length === 0 && <p className="empty-workspace">No conversations in this workspace.</p>}
         </section>
 
@@ -582,8 +567,8 @@ function App() {
             <div><h2>Orion</h2><p>{localReady ? 'Local intelligence ready' : 'Private local session'}</p></div>
           </div>
           <div className="header-actions">
-            <button className="quiet-button" onClick={prepareWebResearch}><Compass size={16} /> Browse</button>
-            <button className="icon-button" title={contextVisible ? 'Hide context' : 'Show context'} onClick={() => setContextVisible((visible) => !visible)}><PanelRight size={18} /></button>
+            <button className="quiet-button" onClick={prepareWebResearch}><OrionIcon name="compass" size={16} /> Browse</button>
+            <button className="icon-button" title={contextVisible ? 'Hide context' : 'Show context'} onClick={() => setContextVisible((visible) => !visible)}><OrionIcon name="panel" size={18} /></button>
           </div>
         </header>
 
@@ -605,24 +590,18 @@ function App() {
           <div className="composer-main">
             <textarea ref={composerRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, window.innerHeight / 3)}px` }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitMessage() } }} placeholder="Speak plainly. Orion will consider it." rows={1} />
             <button type="button" className={`voice-button ${voiceActive ? 'listening' : ''}`} onClick={toggleVoice} title={voiceActive ? 'End voice session' : 'Start voice dictation'}>
-              {voiceActive ? <MicOff size={18} /> : <Mic size={18} />}
+              <OrionIcon name={voiceActive ? 'mic-off' : 'mic'} size={18} />
             </button>
-            <button type="submit" className="send-button" aria-label="Send message"><ChevronDown size={18} /></button>
+            <button type="submit" className="send-button" aria-label="Send message"><OrionIcon name="chevron" size={18} /></button>
           </div>
           <p>{voiceActive ? 'Voice session active. Audio is never retained.' : 'Private by default. Personal memories require consent.'}</p>
         </form>
       </section>
 
       <aside className={`context-panel ${contextVisible ? 'context-visible' : ''}`}>
-        <header className="context-header"><div><h2>Considerations</h2></div><button className="icon-button" title="Close context" onClick={() => setContextVisible(false)}><X size={17} /></button></header>
+        <header className="context-header"><div><h2>Considerations</h2></div><button className="icon-button" title="Close context" onClick={() => setContextVisible(false)}><OrionIcon name="x" size={17} /></button></header>
 
-        <section className="context-card assessment">
-          <div className="card-heading"><span>Current assessment</span><Sparkles size={16} /></div>
-          <div className="confidence-row"><span>Confidence</span><strong>High</strong></div>
-          <div className="confidence-bar"><span /></div>
-          <p>This conversation fits Inbox. Orion will ask before creating a dedicated workspace.</p>
-        </section>
-        {workspaceSuggestion && <section className="context-card workspace-proposal"><div className="card-heading"><span>Workspace proposal</span><Sparkles size={16} /></div><p>Orion sees a sustained planning thread. Create <strong>{workspaceSuggestion}</strong> for this context?</p><div><button onClick={approveWorkspace}>Create workspace</button><button onClick={() => setWorkspaceSuggestion(null)}>Dismiss</button></div></section>}
+        {workspaceSuggestion && <section className="context-card workspace-proposal"><div className="card-heading"><span>Workspace proposal</span><OrionIcon name="spark" size={16} /></div><p>Orion sees a sustained planning thread. Create <strong>{workspaceSuggestion}</strong> for this context?</p><div><button onClick={approveWorkspace}>Create workspace</button><button onClick={() => setWorkspaceSuggestion(null)}>Dismiss</button></div></section>}
 
         <section className="context-card memory-card">
           <div className="card-heading"><span>Memory in use</span><img className="card-asset" src="/assets/memory-vault.svg" alt="" /></div>
@@ -632,7 +611,7 @@ function App() {
         </section>
 
         <section className="council-section">
-          <button className="council-toggle" onClick={() => setCouncilOpen((open) => !open)}><span><Bot size={16} /> Council</span><ChevronDown className={councilOpen ? 'up' : ''} size={17} /></button>
+          <button className="council-toggle" onClick={() => setCouncilOpen((open) => !open)}><span><OrionIcon name="council" size={16} /> Council</span><OrionIcon name="chevron" className={councilOpen ? 'up' : ''} size={17} /></button>
           {councilOpen && <div className="council-list">
             {council.map((member) => <div className="council-member" key={member.name}><span className={`council-orb ${member.color}`} /><div><strong>{member.name}</strong><span>{member.role} - {member.tone}</span></div><span className="standing">Standing by</span></div>)}
             <button className="convene-button" onClick={conveneCouncil} disabled={councilRunning}>{councilRunning ? 'Council deliberating...' : 'Convene on this discussion'}</button>
@@ -644,7 +623,7 @@ function App() {
         </section>
 
         <section className="context-card source-card">
-          <div className="card-heading"><span>Sources</span><Search size={15} /></div>
+          <div className="card-heading"><span>Sources</span><OrionIcon name="search" size={15} /></div>
           {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
           {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
           {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
@@ -653,7 +632,7 @@ function App() {
       </aside>
       {memoryOpen && <div className="modal-backdrop" role="presentation">
         <section className="memory-modal" role="dialog" aria-modal="true" aria-labelledby="memory-title">
-          <header><div><p className="eyebrow">Orion's ledger</p><h2 id="memory-title">Saved memories</h2></div><button className="icon-button" onClick={() => setMemoryOpen(false)} title="Close memories"><X size={18} /></button></header>
+          <header><div><p className="eyebrow">Orion's ledger</p><h2 id="memory-title">Saved memories</h2></div><button className="icon-button" onClick={() => setMemoryOpen(false)} title="Close memories"><OrionIcon name="x" size={18} /></button></header>
           <p className="modal-intro">Only details you explicitly save appear here. Sensitive details are marked and never inferred into memory automatically.</p>
           <form className="memory-form" onSubmit={saveMemory}>
             <textarea value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} placeholder="Add a preference, goal, or detail Orion should retain" rows={3} />
@@ -661,32 +640,32 @@ function App() {
             <button type="submit">Save memory</button>
           </form>
           <div className="memory-list">
-            {memories.length === 0 ? <p className="empty-memory">No memories saved yet.</p> : memories.map((memory) => <article key={memory.id}><div><span>{memory.sensitive ? 'Sensitive' : memory.category}</span><p>{memory.value}</p></div><button onClick={() => deleteMemory(memory.id)} title="Forget this memory"><Trash2 size={15} /></button></article>)}
+            {memories.length === 0 ? <p className="empty-memory">No memories saved yet.</p> : memories.map((memory) => <article key={memory.id}><div><span>{memory.sensitive ? 'Sensitive' : memory.category}</span><p>{memory.value}</p></div><button onClick={() => deleteMemory(memory.id)} title="Forget this memory"><OrionIcon name="trash" size={15} /></button></article>)}
           </div>
         </section>
       </div>}
       {settingsOpen && <div className="modal-backdrop" role="presentation">
         <section className="memory-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <header><div><p className="eyebrow">Command configuration</p><h2 id="settings-title">Settings</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} title="Close settings"><X size={18} /></button></header>
+          <header><div><p className="eyebrow">Command configuration</p><h2 id="settings-title">Settings</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} title="Close settings"><OrionIcon name="x" size={18} /></button></header>
           <section className="settings-section"><h3>Research</h3><label className="setting-toggle"><span><strong>Automatic web research</strong><small>Use live sources for current and time-sensitive requests.</small></span><input type="checkbox" checked={autoResearch} onChange={(event) => { setAutoResearch(event.target.checked); localStorage.setItem('orion.autoResearch', String(event.target.checked)) }} /></label></section>
           <section className="settings-section voice-settings"><h3>Voice</h3><label className="setting-toggle"><span><strong>Speak responses</strong><small>Voice sessions always speak; this controls typed conversations.</small></span><input type="checkbox" checked={autoSpeak} onChange={(event) => { setAutoSpeak(event.target.checked); localStorage.setItem('orion.autoSpeak', String(event.target.checked)) }} /></label><label><span>Installed voice</span><select value={selectedVoiceURI} onChange={(event) => { setSelectedVoiceURI(event.target.value); localStorage.setItem('orion.voiceURI', event.target.value) }}><option value="">Automatic British voice</option>{availableVoices.map((voice) => <option value={voice.voiceURI} key={voice.voiceURI}>{voice.name} ({voice.lang})</option>)}</select></label><label><span>Speaking rate</span><output>{voiceRate.toFixed(2)}</output><input type="range" min="0.65" max="1.25" step="0.05" value={voiceRate} onChange={(event) => { const rate = Number(event.target.value); setVoiceRate(rate); localStorage.setItem('orion.voiceRate', String(rate)) }} /></label><button type="button" className="voice-preview" onClick={() => speak('Good evening. Orion is ready to assist.', true)}>Preview voice</button></section>
         </section>
       </div>}
       {searchOpen && <div className="modal-backdrop" role="presentation">
         <section className="memory-modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="search-title">
-          <header><div><p className="eyebrow">Conversation archive</p><h2 id="search-title">Search chats</h2></div><button className="icon-button" onClick={() => setSearchOpen(false)} title="Close search"><X size={18} /></button></header>
-          <form className="utility-form" onSubmit={searchConversations}><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search titles and messages" /><button type="submit"><Search size={15} /> Search</button></form>
+          <header><div><p className="eyebrow">Conversation archive</p><h2 id="search-title">Search chats</h2></div><button className="icon-button" onClick={() => setSearchOpen(false)} title="Close search"><OrionIcon name="x" size={18} /></button></header>
+          <form className="utility-form" onSubmit={searchConversations}><input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search titles and messages" /><button type="submit"><OrionIcon name="search" size={15} /> Search</button></form>
           <div className="search-results">{searchResults.map((result) => <button key={result.id} onClick={() => { setActiveWorkspace(result.workspace); void openSearchResult(result.id) }}><strong>{result.title}</strong><span>{result.workspace}</span><p>{result.snippet || 'Title match'}</p></button>)}{searchQuery.length >= 2 && searchResults.length === 0 && <p className="empty-memory">No matching conversations.</p>}</div>
         </section>
       </div>}
       {notificationsOpen && <div className="modal-backdrop" role="presentation">
         <section className="memory-modal utility-modal" role="dialog" aria-modal="true" aria-labelledby="status-title">
-          <header><div><p className="eyebrow">Local diagnostics</p><h2 id="status-title">System status</h2></div><button className="icon-button" onClick={() => setNotificationsOpen(false)} title="Close status"><X size={18} /></button></header>
+          <header><div><p className="eyebrow">Local diagnostics</p><h2 id="status-title">System status</h2></div><button className="icon-button" onClick={() => setNotificationsOpen(false)} title="Close status"><OrionIcon name="x" size={18} /></button></header>
           <div className="status-list"><div><span className={`status-light ${localReady ? 'ready' : ''}`} /><p><strong>Local model</strong><small>{localReady ? 'qwen3:4b is connected' : 'Ollama is unavailable'}</small></p></div><div><span className={`status-light ${researchStatus === 'online' ? 'ready' : ''}`} /><p><strong>Web research</strong><small>{researchStatus === 'online' ? `${sources.length} sources available in this chat` : researchStatus === 'offline' ? 'Last research attempt failed' : 'Available when a request requires it'}</small></p></div><div><span className={`status-light ${voiceActive ? 'ready' : ''}`} /><p><strong>Voice session</strong><small>{voiceActive ? 'Microphone session is active' : 'Microphone session is off'}</small></p></div></div>
         </section>
       </div>}
       {workspaceOpen && <div className="modal-backdrop" role="presentation">
-        <section className="delete-modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspace-title"><header><div><p className="eyebrow">Context organisation</p><h2 id="workspace-title">Create workspace</h2></div><button className="icon-button" onClick={() => setWorkspaceOpen(false)} title="Close workspace"><X size={18} /></button></header><form className="utility-form" onSubmit={createWorkspace}><input autoFocus value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" maxLength={40} /><button type="submit">Create</button></form></section>
+        <section className="delete-modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspace-title"><header><div><p className="eyebrow">Context organisation</p><h2 id="workspace-title">Create workspace</h2></div><button className="icon-button" onClick={() => setWorkspaceOpen(false)} title="Close workspace"><OrionIcon name="x" size={18} /></button></header><form className="utility-form" onSubmit={createWorkspace}><input autoFocus value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" maxLength={40} /><button type="submit">Create</button></form></section>
       </div>}
       {pendingDelete && <div className="modal-backdrop" role="presentation">
         <section className="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
