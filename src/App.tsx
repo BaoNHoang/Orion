@@ -25,7 +25,7 @@ type ConversationSearchResult = { id: number; title: string; workspace: string; 
 
 const API = 'http://127.0.0.1:8787/api'
 
-const council = [
+const astriumMembers = [
   { name: 'Nebula', role: 'Strategist', tone: 'Long view', color: 'nebula' },
   { name: 'Helix', role: 'Skeptic', tone: 'Tests claims', color: 'helix' },
   { name: 'Nereid', role: 'Advocate', tone: 'Protects intent', color: 'nereid' },
@@ -181,16 +181,16 @@ function App() {
     recognitionRef.current?.stop()
 
     let councilRoute: CouncilRoute = {
-      convene: /\b(council|advisers|advisors|nebula|helix|nereid|nova)\b/i.test(content),
+      convene: /\b(astrium|council|advisers|advisors|nebula|helix|nereid|nova)\b/i.test(content),
       automatic: false,
-      reason: 'The user explicitly requested the council.',
+      reason: 'The user explicitly requested Astrium.',
     }
     try {
       const routingContext = [...messages.slice(-4), userMessage].map((message) => `${message.role}: ${message.content}`).join('\n')
       const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context: routingContext }) })
       if (routeResponse.ok) councilRoute = await routeResponse.json()
     } catch {
-      // Explicit council requests still work if the lightweight router is unavailable.
+      // Explicit Astrium requests still work if the lightweight router is unavailable.
     }
 
     let webSources: WebSource[] = []
@@ -216,14 +216,14 @@ function App() {
         const topic = [...messages.slice(-4), userMessage].map((message) => `${message.role}: ${message.content}`).join('\n')
         const response = await fetch(`${API}/council`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic, conversationId: activeConversationRef.current, research: webSources }) })
         if (!response.ok) {
-          const failure = await response.json().catch(() => ({ error: 'The council service returned an invalid response.' }))
-          throw new Error(failure.error || 'The council service is unavailable.')
+          const failure = await response.json().catch(() => ({ error: 'Astrium returned an invalid response.' }))
+          throw new Error(failure.error || 'Astrium is unavailable.')
         }
         const report: CouncilReport = await response.json()
         setCouncilReport(report)
         setCouncilOpen(true)
-        const introduction = councilRoute.automatic ? `${councilRoute.reason} I convened the council.` : 'I have summoned the council at your request.'
-        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `${introduction}\n\nCouncil decision: ${report.conclusion}`, time: formatTime() }
+        const introduction = councilRoute.automatic ? `${councilRoute.reason} I convened Astrium.` : 'I have summoned Astrium at your request.'
+        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `${introduction}\n\nAstrium decision: ${report.conclusion}`, time: formatTime() }
         setMessages((current) => [...current, assistantMessage])
         void persistMessage(assistantMessage)
         speak(assistantMessage.content)
@@ -231,7 +231,7 @@ function App() {
         void refreshConversations()
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'The cause was not reported.'
-        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `The council could not complete its deliberation. ${detail}`, time: formatTime() }
+        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `Astrium could not complete its deliberation. ${detail}`, time: formatTime() }
         setMessages((current) => [...current, assistantMessage])
         void persistMessage(assistantMessage)
         speak(assistantMessage.content)
@@ -385,18 +385,18 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: messages.slice(-6).map((message) => `${message.role}: ${message.content}`).join('\n'), conversationId: activeConversationRef.current, research: sources }),
       })
-      if (!response.ok) throw new Error('Council unavailable')
+      if (!response.ok) throw new Error('Astrium unavailable')
       const report: CouncilReport = await response.json()
       setCouncilReport(report)
       setCouncilOpen(true)
-      const assistantMessage: Message = { id: Date.now(), role: 'assistant', content: `Council decision: ${report.conclusion}`, time: formatTime() }
+      const assistantMessage: Message = { id: Date.now(), role: 'assistant', content: `Astrium decision: ${report.conclusion}`, time: formatTime() }
       setMessages((current) => [...current, assistantMessage])
       void persistMessage(assistantMessage)
       speak(assistantMessage.content)
       void refreshConversations()
       setLocalReady(true)
     } catch {
-      setCouncilReport({ positions: [], conclusion: 'The council requires an active local Ollama model. No opinions were fabricated.' })
+      setCouncilReport({ positions: [], conclusion: 'Astrium requires an active local Ollama model. No opinions were fabricated.' })
       setLocalReady(false)
     } finally {
       setCouncilRunning(false)
@@ -612,10 +612,10 @@ function App() {
         </section>
 
         <section className="council-section">
-          <button className="council-toggle" onClick={() => setCouncilOpen((open) => !open)}><span><OrionIcon name="council" size={16} /> Council</span><OrionIcon name="chevron" className={councilOpen ? 'up' : ''} size={17} /></button>
+          <button className="council-toggle" onClick={() => setCouncilOpen((open) => !open)}><span><OrionIcon name="council" size={16} /> Astrium</span><OrionIcon name="chevron" className={councilOpen ? 'up' : ''} size={17} /></button>
           {councilOpen && <div className="council-list">
-            {council.map((member) => <div className="council-member" key={member.name}><span className={`council-orb ${member.color}`} /><div><strong>{member.name}</strong><span>{member.role} - {member.tone}</span></div><span className="standing">Standing by</span></div>)}
-            <button className="convene-button" onClick={conveneCouncil} disabled={councilRunning}>{councilRunning ? 'Council deliberating...' : 'Convene on this discussion'}</button>
+            {astriumMembers.map((member) => <div className="council-member" key={member.name}><span className={`council-orb ${member.color}`} /><div><strong>{member.name}</strong><span>{member.role} - {member.tone}</span></div><span className="standing">Standing by</span></div>)}
+            <button className="convene-button" onClick={conveneCouncil} disabled={councilRunning}>{councilRunning ? 'Astrium deliberating...' : 'Convene Astrium'}</button>
             {councilReport && <div className="council-report">
               {councilReport.positions.map((position) => <div className="council-position" key={position.name}><strong>{position.name}</strong><p>{position.response}</p></div>)}
               <div className="council-conclusion"><span>Orion's conclusion</span><p>{councilReport.conclusion}</p></div>
