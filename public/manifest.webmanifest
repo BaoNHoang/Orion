@@ -1,0 +1,16 @@
+{
+  "name": "Orion",
+  "short_name": "Orion",
+  "description": "A private, local-first personal command centre.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10151b",
+  "theme_color": "#10151b",
+  "icons": [
+    {
+      "src": "/orion-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

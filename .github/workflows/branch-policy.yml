@@ -1,0 +1,21 @@
+name: Branch policy
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require develop or hotfix source
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" != "develop" && "$HEAD_REF" != hotfix/* ]]; then
+            echo "Pull requests into main must come from develop or hotfix/*."
+            exit 1
+          fi

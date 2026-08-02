@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
+  <title id="title">Orion</title>
+  <desc id="description">An orbital command ring surrounding a connected Orion core</desc>
+  <circle cx="32" cy="32" r="30" fill="#10181d"/>
+  <path d="M18.2 7.9A28 28 0 0 1 54.8 19M57.4 26.5A28 28 0 0 1 45.8 56M38.5 59A28 28 0 0 1 8.3 45.8M5.3 38.3A28 28 0 0 1 11.9 14" fill="none" stroke="#76d7c1" stroke-linecap="round" stroke-width="1.6" opacity=".88"/>
+  <path d="M18 23.5c3.5-8.1 14.1-11.4 22-6.9 8.3 4.8 10.2 15.8 4 23.1-5.8 6.8-16.5 7.1-22.7.8-5.1-5.2-5-13.7.2-18.7 4.5-4.3 11.8-4.1 16 .4 3.7 4 3.3 10.4-.8 13.9-3.5 3-8.9 2.6-11.8-.9-2.3-2.8-2-7 .8-9.3" fill="none" stroke="#90ead6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"/>
+  <path d="m17.8 23.7 8.1 2.2M40 16.6l-2.2 5.7M44 39.7l-7.3-3.6" fill="none" stroke="#76d7c1" stroke-width="1.2" opacity=".8"/>
+  <circle cx="17.8" cy="23.7" r="2.8" fill="#10181d" stroke="#90ead6" stroke-width="1.8"/>
+  <circle cx="40" cy="16.6" r="2.5" fill="#90ead6"/>
+  <circle cx="44" cy="39.7" r="2.7" fill="#10181d" stroke="#90ead6" stroke-width="1.8"/>
+  <circle cx="31.2" cy="31.1" r="2.2" fill="#90ead6"/>
+</svg>
