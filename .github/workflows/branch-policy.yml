@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  promotion-path:
+  release-source:
     runs-on: ubuntu-latest
     steps:
       - name: Require feature branches to pass through develop
