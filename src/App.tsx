@@ -405,7 +405,8 @@ function App() {
         return { content: `${introduction}\n\nAstrium decision: ${report.conclusion}`, localReady: true, councilReport: report }
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'The cause was not reported.'
-        return { content: `Astrium could not complete its deliberation. ${detail}`, localReady: false }
+        const failure = 'Astrium could not complete its deliberation.'
+        return { content: detail.startsWith(failure) ? detail : `${failure} ${detail}`, localReady: false }
       } finally {
         setCouncilRunning(false)
       }
