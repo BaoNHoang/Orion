@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 import { OrionIcon } from './components/OrionIcon'
+
+const OrionResonanceCore = lazy(() => import('./components/OrionResonanceCore'))
 
 type Message = {
   id: number
@@ -78,6 +80,10 @@ function App() {
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const voiceSubmitTimer = useRef<number | undefined>(undefined)
   const voiceModeRef = useRef(false)
+  const voiceLevelRef = useRef(0)
+  const voiceAudioContextRef = useRef<AudioContext | null>(null)
+  const voiceAudioStreamRef = useRef<MediaStream | null>(null)
+  const voiceMeterFrameRef = useRef<number | undefined>(undefined)
   const recognitionRef = useRef<any>(null)
   const thinkingRef = useRef(false)
   const messageListRef = useRef<HTMLDivElement>(null)
@@ -109,6 +115,8 @@ function App() {
       .then((payload) => setWorkspaces(payload.workspaces ?? []))
       .catch(() => undefined)
   }, [])
+
+  useEffect(() => () => stopVoiceMeter(), [])
 
   useEffect(() => {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: 'smooth' })
@@ -366,6 +374,51 @@ function App() {
     recognition.start()
   }
 
+  async function startVoiceMeter() {
+    if (!navigator.mediaDevices?.getUserMedia || voiceAudioStreamRef.current) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: true, echoCancellation: true, noiseSuppression: true } })
+      if (!voiceModeRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      const audioContext = new AudioContext()
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.76
+      audioContext.createMediaStreamSource(stream).connect(analyser)
+      const samples = new Uint8Array(analyser.fftSize)
+      voiceAudioContextRef.current = audioContext
+      voiceAudioStreamRef.current = stream
+
+      const measure = () => {
+        analyser.getByteTimeDomainData(samples)
+        let sum = 0
+        for (const sample of samples) {
+          const normalized = (sample - 128) / 128
+          sum += normalized * normalized
+        }
+        const rms = Math.sqrt(sum / samples.length)
+        const target = Math.min(rms * 5.8, 1)
+        voiceLevelRef.current += (target - voiceLevelRef.current) * (target > voiceLevelRef.current ? 0.42 : 0.16)
+        voiceMeterFrameRef.current = window.requestAnimationFrame(measure)
+      }
+      measure()
+    } catch {
+      voiceLevelRef.current = 0
+    }
+  }
+
+  function stopVoiceMeter() {
+    if (voiceMeterFrameRef.current) window.cancelAnimationFrame(voiceMeterFrameRef.current)
+    voiceMeterFrameRef.current = undefined
+    voiceAudioStreamRef.current?.getTracks().forEach((track) => track.stop())
+    voiceAudioStreamRef.current = null
+    void voiceAudioContextRef.current?.close()
+    voiceAudioContextRef.current = null
+    voiceLevelRef.current = 0
+  }
+
   function toggleVoice() {
     if (voiceModeRef.current) {
       setVoiceActive(false)
@@ -376,10 +429,12 @@ function App() {
       recognitionRef.current = null
       window.speechSynthesis?.cancel()
       setSpeaking(false)
+      stopVoiceMeter()
       return
     }
     setVoiceActive(true)
     voiceModeRef.current = true
+    void startVoiceMeter()
     beginListening()
   }
 
@@ -533,6 +588,7 @@ function App() {
   }
 
   const voicePhase = speaking ? 'speaking' : thinking || councilRunning ? 'thinking' : voiceActive ? 'listening' : 'idle'
+  const resonancePhase = councilRunning ? 'council' : voicePhase
   const voiceStatus = {
     idle: { title: 'Voice session paused' },
     listening: { title: 'Listening' },
@@ -622,13 +678,11 @@ function App() {
           </div>
           <p>{voiceActive ? 'Voice session active. Audio is never retained.' : 'Private by default. Personal memories require consent.'}</p>
         </form></> : <section className={`voice-stage ${voicePhase}`} aria-label={`Orion voice mode. ${voiceStatus.title}`}>
-          <div className="voice-presence-wrap">
-            <span className="voice-ring voice-ring-outer" aria-hidden="true" />
-            <span className="voice-ring voice-ring-inner" aria-hidden="true" />
-            <button type="button" className="voice-presence" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'}>
-              <span className="voice-bars" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</span>
-              <OrionIcon name={voiceActive ? 'mic' : 'mic-off'} size={25} />
-            </button>
+          <div className="resonance-shell">
+            <Suspense fallback={<div className="resonance-loading" aria-hidden="true" />}>
+              <OrionResonanceCore phase={resonancePhase} audioLevelRef={voiceLevelRef} />
+            </Suspense>
+            <button type="button" className="resonance-control" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'} />
           </div>
           <div className="voice-state-copy" aria-live="polite">
             <h3>{voiceStatus.title}</h3>
