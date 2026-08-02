@@ -41,6 +41,17 @@ type TurnResult = {
   content: string
   localReady: boolean
   councilReport?: CouncilReport
+  streamed?: boolean
+}
+
+type ChatStreamEvent =
+  | { type: 'delta'; content: string }
+  | { type: 'reset' }
+  | { type: 'done'; content: string }
+
+type StreamingSpeechController = {
+  update: (content: string, complete?: boolean) => void
+  cancel: () => void
 }
 
 const API = 'http://127.0.0.1:8787/api'
@@ -50,6 +61,15 @@ const astriumMembers = [
   { name: 'Helix', role: 'Skeptic', tone: 'Tests claims', color: 'helix' },
   { name: 'Nereid', role: 'Advocate', tone: 'Protects intent', color: 'nereid' },
   { name: 'Nova', role: 'Operator', tone: 'Makes it real', color: 'nova' },
+]
+
+const cosmicThinkingLabels = [
+  'Charting starlight',
+  'Materializing',
+  'Orbiting',
+  'Resolving parallax',
+  'Tracing constellations',
+  'Warping',
 ]
 
 function formatTime() {
@@ -106,6 +126,50 @@ function isLikelySpeechEcho(transcript: string, spokenText: string) {
   return heardWords.length >= 4 && overlap / heardWords.length >= 0.8
 }
 
+async function readChatResponse(response: Response, onStream: (event: ChatStreamEvent) => void) {
+  if (!response.ok) throw new Error('Local model unavailable')
+  if (!response.headers.get('content-type')?.includes('application/x-ndjson') || !response.body) {
+    const payload = await response.json()
+    return { message: String(payload.message || ''), streamed: false }
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let content = ''
+
+  const consumeLine = (line: string) => {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as { type: string; content?: string; message?: string }
+    if (event.type === 'error') throw new Error(event.message || 'Local model stream failed')
+    if (event.type === 'reset') {
+      content = ''
+      onStream({ type: 'reset' })
+      return
+    }
+    if (event.type === 'delta') {
+      content += event.content || ''
+      onStream({ type: 'delta', content })
+      return
+    }
+    if (event.type === 'done') {
+      content = event.content || content
+      onStream({ type: 'done', content })
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+    for (const line of lines) consumeLine(line)
+    if (done) break
+  }
+  if (buffer.trim()) consumeLine(buffer)
+  return { message: content, streamed: true }
+}
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
@@ -115,6 +179,8 @@ function App() {
   const [councilOpen, setCouncilOpen] = useState(true)
   const [localReady, setLocalReady] = useState(false)
   const [thinking, setThinking] = useState(false)
+  const [streamingResponse, setStreamingResponse] = useState(false)
+  const [thinkingLabel, setThinkingLabel] = useState(cosmicThinkingLabels[0])
   const [councilRunning, setCouncilRunning] = useState(false)
   const [councilReport, setCouncilReport] = useState<CouncilReport | null>(null)
   const [memoryOpen, setMemoryOpen] = useState(false)
@@ -198,6 +264,19 @@ function App() {
   }, [messages])
 
   useEffect(() => {
+    if (!thinking || councilRunning) return
+    let previous = cosmicThinkingLabels[Math.floor(Math.random() * cosmicThinkingLabels.length)]
+    setThinkingLabel(previous)
+    const rotateLabel = () => {
+      const choices = cosmicThinkingLabels.filter((label) => label !== previous)
+      previous = choices[Math.floor(Math.random() * choices.length)]
+      setThinkingLabel(previous)
+    }
+    const interval = window.setInterval(rotateLabel, 1600)
+    return () => window.clearInterval(interval)
+  }, [thinking, councilRunning])
+
+  useEffect(() => {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, thinking])
 
@@ -266,7 +345,17 @@ function App() {
     setMessages(messagesRef.current)
   }
 
-  async function executeTurn(turn: QueuedTurn): Promise<TurnResult> {
+  function updateVisibleMessage(id: number, content: string) {
+    messagesRef.current = messagesRef.current.map((message) => message.id === id ? { ...message, content } : message)
+    setMessages(messagesRef.current)
+  }
+
+  function removeVisibleMessage(id: number) {
+    messagesRef.current = messagesRef.current.filter((message) => message.id !== id)
+    setMessages(messagesRef.current)
+  }
+
+  async function executeTurn(turn: QueuedTurn, onStream: (event: ChatStreamEvent) => void): Promise<TurnResult> {
     const content = turn.content
     let councilRoute: CouncilRoute = {
       convene: /\b(astrium|council|advisers|advisors|nebula|helix|nereid|nova)\b/i.test(content),
@@ -328,9 +417,8 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content, history: turn.history.slice(-8), research: webSources }),
       })
-      if (!response.ok) throw new Error('Local model unavailable')
-      const payload = await response.json()
-      return { content: payload.message, localReady: true }
+      const payload = await readChatResponse(response, onStream)
+      return { content: payload.message, localReady: true, streamed: payload.streamed }
     } catch {
       return {
         content: 'The local intelligence service is not online yet. The command centre remains private and functional; install Ollama, then start a local model to speak with me without an API bill.',
@@ -339,15 +427,16 @@ function App() {
     }
   }
 
-  function commitTurnResult(turn: QueuedTurn, result: TurnResult) {
-    const assistantMessage: Message = { id: nextMessageId(), role: 'assistant', content: result.content, time: formatTime() }
+  function commitTurnResult(turn: QueuedTurn, result: TurnResult, streamedMessageId?: number, speechStreamed = false) {
+    const assistantMessage: Message = { id: streamedMessageId ?? nextMessageId(), role: 'assistant', content: result.content, time: formatTime() }
     if (activeConversationRef.current === turn.conversationId) {
-      appendVisibleMessage(assistantMessage)
+      if (streamedMessageId) updateVisibleMessage(streamedMessageId, result.content)
+      else appendVisibleMessage(assistantMessage)
       if (result.councilReport) {
         setCouncilReport(result.councilReport)
         setCouncilOpen(true)
       }
-      speak(assistantMessage.content)
+      if (!speechStreamed) speak(assistantMessage.content)
     }
     void persistMessage(assistantMessage, turn.conversationId)
     setLocalReady(result.localReady)
@@ -362,15 +451,40 @@ function App() {
     activeTurnRef.current = turn
     thinkingRef.current = true
     setThinking(true)
+    let streamedMessageId: number | undefined
+    const streamingState: { speech: StreamingSpeechController | null } = { speech: null }
+
+    const handleStream = (event: ChatStreamEvent) => {
+      if (activeConversationRef.current !== turn.conversationId) return
+      if (event.type === 'reset') {
+        setStreamingResponse(false)
+        if (streamedMessageId) updateVisibleMessage(streamedMessageId, '')
+        streamingState.speech?.cancel()
+        streamingState.speech = null
+        return
+      }
+      setStreamingResponse(true)
+      if (!streamedMessageId) {
+        streamedMessageId = nextMessageId()
+        appendVisibleMessage({ id: streamedMessageId, role: 'assistant', content: event.content, time: formatTime() })
+      } else {
+        updateVisibleMessage(streamedMessageId, event.content)
+      }
+      if (!streamingState.speech) streamingState.speech = createStreamingSpeech()
+      streamingState.speech?.update(event.content, event.type === 'done')
+    }
 
     try {
-      const result = await executeTurn(turn)
+      const result = await executeTurn(turn, handleStream)
       const clarifications: QueuedTurn[] = []
       while (turnQueueRef.current[0]?.relation === 'clarification' && turnQueueRef.current[0].conversationId === turn.conversationId) {
         clarifications.push(turnQueueRef.current.shift()!)
       }
 
       if (clarifications.length > 0) {
+        setStreamingResponse(false)
+        if (streamedMessageId) removeVisibleMessage(streamedMessageId)
+        streamingState.speech?.cancel()
         const lastClarification = clarifications[clarifications.length - 1]
         turnQueueRef.current.unshift({
           id: lastClarification.id,
@@ -382,9 +496,11 @@ function App() {
           shouldGenerateTitle: turn.shouldGenerateTitle || clarifications.some((item) => item.shouldGenerateTitle),
         })
       } else {
-        commitTurnResult(turn, result)
+        if (!result.streamed) streamingState.speech?.cancel()
+        commitTurnResult(turn, result, streamedMessageId, Boolean(result.streamed && streamingState.speech))
       }
     } finally {
+      setStreamingResponse(false)
       processingTurnRef.current = false
       activeTurnRef.current = null
       if (turnQueueRef.current.length > 0) {
@@ -399,6 +515,13 @@ function App() {
   function submitMessage(contentOverride?: string) {
     const content = (contentOverride ?? draft).trim()
     if (!content) return
+    if (speakingRef.current) {
+      speechGenerationRef.current += 1
+      speakingRef.current = false
+      spokenTextRef.current = ''
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+    }
     const conversationId = activeConversationRef.current
     const shouldGenerateTitle = conversations.some((conversation) => conversation.id === conversationId && conversation.title === 'New conversation')
     const queuedTarget = turnQueueRef.current[turnQueueRef.current.length - 1]
@@ -426,6 +549,87 @@ function App() {
     void submitMessage()
   }
 
+  function createSpeechUtterance(text: string) {
+    const utterance = new SpeechSynthesisUtterance(text)
+    const voices = window.speechSynthesis.getVoices()
+    const selectedVoice = voices.find((voice) => voice.voiceURI === selectedVoiceURI)
+      ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('en-gb'))
+    if (selectedVoice) utterance.voice = selectedVoice
+    utterance.lang = selectedVoice?.lang || 'en-GB'
+    utterance.rate = voiceRate
+    return utterance
+  }
+
+  function createStreamingSpeech(): StreamingSpeechController | null {
+    if (!('speechSynthesis' in window) || (!autoSpeak && !voiceModeRef.current)) return null
+    const speechGeneration = ++speechGenerationRef.current
+    let cursor = 0
+    let pending = 0
+    let complete = false
+    let cancelled = false
+
+    window.speechSynthesis.cancel()
+    window.speechSynthesis.resume()
+
+    const settle = () => {
+      if (cancelled || speechGenerationRef.current !== speechGeneration || !complete || pending > 0) return
+      speakingRef.current = false
+      spokenTextRef.current = ''
+      setSpeaking(false)
+      if (voiceModeRef.current) beginListening()
+    }
+
+    const enqueue = (text: string) => {
+      const spokenChunk = text.trim()
+      if (!spokenChunk) return
+      if (!speakingRef.current) {
+        speakingRef.current = true
+        setSpeaking(true)
+      }
+      pending += 1
+      const utterance = createSpeechUtterance(spokenChunk)
+      const finishChunk = () => {
+        if (speechGenerationRef.current !== speechGeneration) return
+        pending = Math.max(0, pending - 1)
+        settle()
+      }
+      utterance.onend = finishChunk
+      utterance.onerror = finishChunk
+      window.speechSynthesis.speak(utterance)
+    }
+
+    return {
+      update(content, isComplete = false) {
+        if (cancelled || speechGenerationRef.current !== speechGeneration) return
+        spokenTextRef.current = content
+        complete = isComplete
+        while (cursor < content.length) {
+          const remaining = content.slice(cursor)
+          const punctuation = remaining.match(/[.!?](?:\s|$)/)
+          let boundary = punctuation?.index === undefined ? -1 : cursor + punctuation.index + punctuation[0].length
+          if (boundary < 0 && remaining.length >= 110) {
+            const naturalBreak = remaining.slice(0, 110).lastIndexOf(' ')
+            if (naturalBreak >= 60) boundary = cursor + naturalBreak + 1
+          }
+          if (boundary < 0 && isComplete) boundary = content.length
+          if (boundary < 0) break
+          enqueue(content.slice(cursor, boundary))
+          cursor = boundary
+        }
+        settle()
+      },
+      cancel() {
+        if (cancelled) return
+        cancelled = true
+        if (speechGenerationRef.current === speechGeneration) speechGenerationRef.current += 1
+        speakingRef.current = false
+        spokenTextRef.current = ''
+        window.speechSynthesis.cancel()
+        setSpeaking(false)
+      },
+    }
+  }
+
   function speak(text: string, force = false) {
     if (!('speechSynthesis' in window)) return
     if (!force && !autoSpeak && !voiceModeRef.current) return
@@ -435,13 +639,7 @@ function App() {
     window.speechSynthesis.resume()
     const spokenText = text.replace(/```[\s\S]*?```/g, ' code omitted ').replace(/[*_#`~>|[\](){}]/g, ' ').replace(/\s+/g, ' ').trim()
     spokenTextRef.current = spokenText
-    const utterance = new SpeechSynthesisUtterance(spokenText)
-    const voices = window.speechSynthesis.getVoices()
-    const selectedVoice = voices.find((voice) => voice.voiceURI === selectedVoiceURI)
-      ?? voices.find((voice) => voice.lang.toLowerCase().startsWith('en-gb'))
-    if (selectedVoice) utterance.voice = selectedVoice
-    utterance.lang = selectedVoice?.lang || 'en-GB'
-    utterance.rate = voiceRate
+    const utterance = createSpeechUtterance(spokenText)
     setSpeaking(true)
     const finishSpeaking = () => {
       if (speechGenerationRef.current !== speechGeneration) return
@@ -727,7 +925,7 @@ function App() {
   const voiceStatus = {
     idle: { title: 'Voice session paused' },
     listening: { title: 'Listening' },
-    thinking: { title: councilRunning ? 'Astrium is deliberating' : voiceActive ? 'Listening while considering' : 'Considering your request' },
+    thinking: { title: councilRunning ? 'Astrium is deliberating' : thinkingLabel },
     speaking: { title: voiceActive ? 'Speaking and listening' : 'Orion is speaking' },
   }[voicePhase]
   const voiceControlPhase = councilRunning ? 'council' : voicePhase
@@ -802,7 +1000,7 @@ function App() {
               </div>
             </article>
           ))}
-          {thinking && <article className="message assistant"><div className="message-avatar"><img src="/assets/orion-sigil.svg" alt="" /></div><div className="typing"><i /><i /><i /></div></article>}
+          {thinking && !streamingResponse && <article className="message assistant"><div className="message-avatar"><img src="/assets/orion-sigil.svg" alt="" /></div><div className="typing"><i /><i /><i /></div></article>}
         </div>
 
         <form className="composer" onSubmit={sendMessage}>
