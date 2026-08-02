@@ -15,7 +15,7 @@ type CouncilReport = {
   conclusion: string
 }
 
-type CouncilRoute = { convene: boolean; automatic: boolean; reason: string; research?: boolean }
+type CouncilRoute = { convene: boolean; automatic: boolean; reason: string; research?: boolean; researchQuery?: string }
 type WebSource = { title: string; url: string; snippet: string; published?: string | null }
 
 type Memory = { id: number; category: string; value: string; sensitive: number; approved: number }
@@ -186,7 +186,8 @@ function App() {
       reason: 'The user explicitly requested the council.',
     }
     try {
-      const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content }) })
+      const routingContext = [...messages.slice(-4), userMessage].map((message) => `${message.role}: ${message.content}`).join('\n')
+      const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context: routingContext }) })
       if (routeResponse.ok) councilRoute = await routeResponse.json()
     } catch {
       // Explicit council requests still work if the lightweight router is unavailable.
@@ -197,7 +198,7 @@ function App() {
     if (councilRoute.research && (autoResearch || explicitResearch)) {
       setResearchStatus('searching')
       try {
-        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: content, conversationId: activeConversationRef.current }) })
+        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: councilRoute.researchQuery || content, conversationId: activeConversationRef.current }) })
         if (!researchResponse.ok) throw new Error('Research unavailable')
         const researchPayload = await researchResponse.json()
         webSources = researchPayload.sources ?? []
