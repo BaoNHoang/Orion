@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Orion memory vault</title>
+  <desc id="desc">A private local memory ledger with a sealed core</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 5.5h13l5 5v16H7z" stroke="#507b73" stroke-width="1.4"/>
+    <path d="M20 5.5v5h5M11 11h5M11 15h9" stroke="#92e5d1" stroke-width="1.4"/>
+    <path d="M11.5 22.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" stroke="#92e5d1" stroke-width="1.5"/>
+    <circle cx="16" cy="22.5" r="2.2" fill="#10181d" stroke="#b4f3e4" stroke-width="1.5"/>
+  </g>
+</svg>
