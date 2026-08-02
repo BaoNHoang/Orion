@@ -15,7 +15,8 @@
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.10.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@emnapi/core": "^2.0.0-alpha.3",
@@ -23,6 +24,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.3",
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
     "typescript": "~7.0.2",
