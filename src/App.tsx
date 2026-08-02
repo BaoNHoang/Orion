@@ -12,9 +12,7 @@ import {
   Plus,
   Search,
   Settings,
-  ShieldCheck,
   Sparkles,
-  Stars,
   Trash2,
   X,
 } from 'lucide-react'
@@ -573,14 +571,14 @@ function App() {
         <footer className="local-status">
           <span className={`status-light ${localReady ? 'ready' : ''}`} />
           <span>{localReady ? 'Local model connected' : 'Local model offline'}</span>
-          <ShieldCheck size={15} />
+          <img className="status-asset" src="/assets/memory-vault.svg" alt="" />
         </footer>
       </aside>
 
       <section className="conversation" aria-label="Conversation with Orion">
         <header className="conversation-header">
           <div className="conversation-title">
-            <div className="orion-avatar"><Stars size={17} /></div>
+            <div className="orion-avatar"><img src="/assets/orion-sigil.svg" alt="" /></div>
             <div><h2>Orion</h2><p>{localReady ? 'Local intelligence ready' : 'Private local session'}</p></div>
           </div>
           <div className="header-actions">
@@ -593,14 +591,14 @@ function App() {
           <div className="date-rule"><span>Today</span></div>
           {messages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>
-              {message.role === 'assistant' && <div className="message-avatar"><Stars size={14} /></div>}
+              {message.role === 'assistant' && <div className="message-avatar"><img src="/assets/orion-sigil.svg" alt="" /></div>}
               <div className="message-content">
                 <div className="message-meta"><strong>{message.role === 'assistant' ? 'Orion' : 'You'}</strong><time>{message.time}</time></div>
                 <p>{message.content}</p>
               </div>
             </article>
           ))}
-          {thinking && <article className="message assistant"><div className="message-avatar"><Stars size={14} /></div><div className="typing"><i /><i /><i /></div></article>}
+          {thinking && <article className="message assistant"><div className="message-avatar"><img src="/assets/orion-sigil.svg" alt="" /></div><div className="typing"><i /><i /><i /></div></article>}
         </div>
 
         <form className="composer" onSubmit={sendMessage}>
@@ -627,7 +625,7 @@ function App() {
         {workspaceSuggestion && <section className="context-card workspace-proposal"><div className="card-heading"><span>Workspace proposal</span><Sparkles size={16} /></div><p>Orion sees a sustained planning thread. Create <strong>{workspaceSuggestion}</strong> for this context?</p><div><button onClick={approveWorkspace}>Create workspace</button><button onClick={() => setWorkspaceSuggestion(null)}>Dismiss</button></div></section>}
 
         <section className="context-card memory-card">
-          <div className="card-heading"><span>Memory in use</span><ShieldCheck size={16} /></div>
+          <div className="card-heading"><span>Memory in use</span><img className="card-asset" src="/assets/memory-vault.svg" alt="" /></div>
           <p className="memory-title">Operating principle</p>
           <p>Local first. Explicit consent for sensitive details and consequential actions.</p>
           <button className="text-button" onClick={() => setMemoryOpen(true)}>Review saved memories</button>
