@@ -730,6 +730,8 @@ function App() {
     thinking: { title: councilRunning ? 'Astrium is deliberating' : voiceActive ? 'Listening while considering' : 'Considering your request' },
     speaking: { title: voiceActive ? 'Speaking and listening' : 'Orion is speaking' },
   }[voicePhase]
+  const voiceControlPhase = councilRunning ? 'council' : voicePhase
+  const voiceControlLabel = voiceActive ? 'End voice session' : 'Start voice session'
 
   return (
     <main className={`command-centre ${contextVisible ? '' : 'context-hidden'}`}>
@@ -806,7 +808,7 @@ function App() {
         <form className="composer" onSubmit={sendMessage}>
           <div className="composer-main">
             <textarea ref={composerRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = 'auto'; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, window.innerHeight / 3)}px` }} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitMessage() } }} placeholder="Speak plainly. Orion will consider it." rows={1} />
-            <button type="button" className={`voice-button ${voiceActive ? 'listening' : ''}`} onClick={toggleVoice} title={voiceActive ? 'End voice session' : 'Start voice dictation'}>
+            <button type="button" className={`voice-button ${voiceControlPhase}`} onClick={toggleVoice} aria-label={voiceControlLabel} aria-pressed={voiceActive} title={voiceControlLabel}>
               <OrionIcon name={voiceActive ? 'mic-off' : 'mic'} size={18} />
             </button>
             <button type="submit" className="send-button" aria-label="Send message"><OrionIcon name="chevron" size={18} /></button>
@@ -817,7 +819,7 @@ function App() {
             <Suspense fallback={<div className="resonance-loading" aria-hidden="true" />}>
               <OrionResonanceCore phase={resonancePhase} audioLevelRef={voiceLevelRef} />
             </Suspense>
-            <button type="button" className="resonance-control" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'} />
+            <button type="button" className={`resonance-control ${voiceControlPhase}`} onClick={toggleVoice} aria-label={voiceControlLabel} aria-pressed={voiceActive} title={voiceControlLabel} />
           </div>
           <div className="voice-state-copy" aria-live="polite">
             <h3>{voiceStatus.title}</h3>
