@@ -49,7 +49,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       return
     }
     renderer.setClearColor(0x000000, 0)
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.22
@@ -102,19 +102,17 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       return { ring, material }
     })
 
-    const starCount = reducedMotion ? 90 : 230
+    const starCount = reducedMotion ? 150 : 560
     const starPositions = new Float32Array(starCount * 3)
+    const starSeeds = new Float32Array(starCount * 3)
     for (let index = 0; index < starCount; index += 1) {
-      const radius = 2.8 + Math.random() * 2.2
-      const theta = Math.random() * Math.PI * 2
-      const phi = Math.acos(2 * Math.random() - 1)
-      starPositions[index * 3] = radius * Math.sin(phi) * Math.cos(theta)
-      starPositions[index * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta)
-      starPositions[index * 3 + 2] = (radius * Math.cos(phi)) * 0.48
+      starSeeds[index * 3] = Math.random() * 2 - 1
+      starSeeds[index * 3 + 1] = Math.random() * 2 - 1
+      starSeeds[index * 3 + 2] = Math.random() * 2 - 1
     }
     const starGeometry = new THREE.BufferGeometry()
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
-    const starMaterial = new THREE.PointsMaterial({ color: palette.idle.star, size: 0.025, transparent: true, opacity: 0.45, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false })
+    const starMaterial = new THREE.PointsMaterial({ color: 0xe8f2f2, size: 0.025, transparent: true, opacity: 0.5, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false })
     const stars = new THREE.Points(starGeometry, starMaterial)
     instrument.add(stars)
 
@@ -149,6 +147,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
     const targetPrimary = new THREE.Color(palette.idle.primary)
     const targetSecondary = new THREE.Color(palette.idle.secondary)
     const targetStar = new THREE.Color(palette.idle.star)
+    const whiteStar = new THREE.Color(0xf0f7f6)
     let frame = 0
     let visible = true
     let previous = performance.now()
@@ -160,7 +159,17 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       const height = Math.max(1, Math.floor(bounds.height))
       renderer.setSize(width, height, false)
       camera.aspect = width / height
+      const targetInstrumentSpan = Math.min(620, width * 0.9, height * 0.78)
+      camera.position.z = 7.6 * height / Math.max(targetInstrumentSpan, 1)
       camera.updateProjectionMatrix()
+      const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * camera.position.z * 1.16
+      const halfWidth = halfHeight * camera.aspect
+      for (let index = 0; index < starCount; index += 1) {
+        starPositions[index * 3] = starSeeds[index * 3] * halfWidth
+        starPositions[index * 3 + 1] = starSeeds[index * 3 + 1] * halfHeight
+        starPositions[index * 3 + 2] = starSeeds[index * 3 + 2] * 1.6
+      }
+      starGeometry.attributes.position.needsUpdate = true
     }
     const resizeObserver = new ResizeObserver(resize)
     resizeObserver.observe(canvas)
@@ -190,7 +199,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
 
       targetPrimary.setHex(colors.primary)
       targetSecondary.setHex(colors.secondary)
-      targetStar.setHex(colors.star)
+      targetStar.setHex(colors.star).lerp(whiteStar, 0.72)
       if (currentPhase === 'thinking') {
         targetPrimary.lerp(new THREE.Color(0xb06bea), thinkingShift * 0.42)
         targetSecondary.lerp(new THREE.Color(0x4fcad1), (1 - thinkingShift) * 0.36)
@@ -223,8 +232,8 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
         material.color.lerp(index === 1 ? targetSecondary : targetPrimary, 0.04)
         material.opacity = 0.11 + energy * 0.16 + (currentPhase === 'thinking' ? index * 0.045 : 0)
       })
-      stars.rotation.z += delta * 0.025
-      stars.rotation.y -= delta * 0.018
+      stars.position.x = Math.sin(time * 0.07) * 0.08
+      stars.position.y = Math.cos(time * 0.055) * 0.07
       starMaterial.opacity = 0.3 + energy * 0.34 + (currentPhase === 'council' ? 0.2 : 0)
 
       comets.forEach((comet, index) => {
