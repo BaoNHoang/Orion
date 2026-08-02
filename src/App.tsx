@@ -25,6 +25,23 @@ type Workspace = { id: number; name: string; color: string }
 type Conversation = { id: number; title: string; workspace: string; message_count: number }
 type ConversationSearchResult = { id: number; title: string; workspace: string; snippet: string }
 type ConversationMode = 'text' | 'voice'
+type TurnRelation = 'clarification' | 'new-topic'
+
+type QueuedTurn = {
+  id: number
+  content: string
+  conversationId: number
+  relation: TurnRelation
+  sourceMessageIds: number[]
+  history: Message[]
+  shouldGenerateTitle: boolean
+}
+
+type TurnResult = {
+  content: string
+  localReady: boolean
+  councilReport?: CouncilReport
+}
 
 const API = 'http://127.0.0.1:8787/api'
 
@@ -37,6 +54,38 @@ const astriumMembers = [
 
 function formatTime() {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(new Date())
+}
+
+const interruptionStopWords = new Set([
+  'about', 'after', 'again', 'also', 'because', 'before', 'could', 'from', 'have', 'into', 'just', 'like',
+  'more', 'please', 'should', 'that', 'their', 'then', 'there', 'these', 'they', 'this', 'what', 'when',
+  'where', 'which', 'with', 'would', 'your',
+])
+
+function significantTerms(value: string) {
+  return new Set(value.toLowerCase().match(/[a-z0-9]+/g)?.filter((word) => word.length > 3 && !interruptionStopWords.has(word)) ?? [])
+}
+
+function classifyInterruption(target: string, incoming: string): TurnRelation {
+  const text = incoming.toLowerCase().trim()
+  if (/\b(another|different|new|unrelated)\s+(question|topic|subject)\b|\b(by the way|separately|moving on)\b/.test(text)) return 'new-topic'
+  if (/\b(actually|i mean|correction|to clarify|let me clarify|rather|instead|wait|make that|what i meant)\b/.test(text)) return 'clarification'
+  if (/^(and|also|but|because|plus|with|without|including|especially|except|not)\b/.test(text)) return 'clarification'
+  if (/\b(it|that|this|those|these|same|earlier|previous|answer)\b/.test(text)) return 'clarification'
+
+  const targetTerms = significantTerms(target)
+  const hasOverlap = [...significantTerms(incoming)].some((term) => targetTerms.has(term))
+  if (hasOverlap || /^(what|how) about\b/.test(text)) return 'clarification'
+
+  const independentRequest = /^(what|who|where|when|why|how|which|is|are|can|could|do|does|did|will|would|should|tell|give|show|find|search|make|write|create|open|set|remind|explain)\b/.test(text)
+  const wordCount = text.match(/[a-z0-9]+/g)?.length ?? 0
+  if (!independentRequest && wordCount <= 5) return 'clarification'
+  return 'new-topic'
+}
+
+function combineTurnContent(turn: QueuedTurn, clarifications: QueuedTurn[]) {
+  const additions = clarifications.map((item, index) => `Later message ${index + 1}: ${item.content}`).join('\n')
+  return `The user continued while you were considering the request. Treat the later messages as corrections or clarifications, preserve the user's final intent, and answer only the corrected request.\n\nOriginal request: ${turn.content}\n${additions}`
 }
 
 function App() {
@@ -86,6 +135,13 @@ function App() {
   const voiceMeterFrameRef = useRef<number | undefined>(undefined)
   const recognitionRef = useRef<any>(null)
   const thinkingRef = useRef(false)
+  const speakingRef = useRef(false)
+  const speechGenerationRef = useRef(0)
+  const messagesRef = useRef<Message[]>([])
+  const turnQueueRef = useRef<QueuedTurn[]>([])
+  const processingTurnRef = useRef(false)
+  const activeTurnRef = useRef<QueuedTurn | null>(null)
+  const messageSequenceRef = useRef(Date.now())
   const messageListRef = useRef<HTMLDivElement>(null)
   const activeConversationRef = useRef(0)
   const creatingConversationRef = useRef(false)
@@ -117,6 +173,10 @@ function App() {
   }, [])
 
   useEffect(() => () => stopVoiceMeter(), [])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight, behavior: 'smooth' })
@@ -169,36 +229,33 @@ function App() {
     window.setTimeout(() => composerRef.current?.focus(), 0)
   }
 
-  function persistMessage(message: Message) {
+  function persistMessage(message: Message, conversationId = activeConversationRef.current) {
     return fetch(`${API}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...message, conversationId: activeConversationRef.current }),
+      body: JSON.stringify({ ...message, conversationId }),
     }).catch(() => undefined)
   }
 
-  async function submitMessage(contentOverride?: string) {
-    const content = (contentOverride ?? draft).trim()
-    if (!content || thinking) return
-    const conversationId = activeConversationRef.current
-    const shouldGenerateTitle = conversations.some((conversation) => conversation.id === conversationId && conversation.title === 'New conversation')
+  function nextMessageId() {
+    messageSequenceRef.current = Math.max(Date.now(), messageSequenceRef.current + 1)
+    return messageSequenceRef.current
+  }
 
-    const userMessage: Message = { id: Date.now(), role: 'user', content, time: formatTime() }
-    setMessages((current) => [...current, userMessage])
-    if (/\b(plan|project|build|develop|design)\b/i.test(content) && !workspaces.some((workspace) => workspace.name === 'Planning')) setWorkspaceSuggestion('Planning')
-    void persistMessage(userMessage)
-    setDraft('')
-    setThinking(true)
-    thinkingRef.current = true
-    recognitionRef.current?.stop()
+  function appendVisibleMessage(message: Message) {
+    messagesRef.current = [...messagesRef.current, message]
+    setMessages(messagesRef.current)
+  }
 
+  async function executeTurn(turn: QueuedTurn): Promise<TurnResult> {
+    const content = turn.content
     let councilRoute: CouncilRoute = {
       convene: /\b(astrium|council|advisers|advisors|nebula|helix|nereid|nova)\b/i.test(content),
       automatic: false,
       reason: 'The user explicitly requested Astrium.',
     }
     try {
-      const routingContext = [...messages.slice(-4), userMessage].map((message) => `${message.role}: ${message.content}`).join('\n')
+      const routingContext = [...turn.history.slice(-4), { role: 'user', content }].map((message) => `${message.role}: ${message.content}`).join('\n')
       const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context: routingContext }) })
       if (routeResponse.ok) councilRoute = await routeResponse.json()
     } catch {
@@ -210,94 +267,139 @@ function App() {
     if (councilRoute.research && (autoResearch || explicitResearch)) {
       setResearchStatus('searching')
       try {
-        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: councilRoute.researchQuery || content, conversationId: activeConversationRef.current }) })
+        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: councilRoute.researchQuery || content, conversationId: turn.conversationId }) })
         if (!researchResponse.ok) throw new Error('Research unavailable')
         const researchPayload = await researchResponse.json()
         webSources = researchPayload.sources ?? []
-        setSources(webSources)
-        setResearchStatus('online')
+        if (activeConversationRef.current === turn.conversationId) {
+          setSources(webSources)
+          setResearchStatus('online')
+        }
       } catch {
-        setSources([])
-        setResearchStatus('offline')
+        if (activeConversationRef.current === turn.conversationId) {
+          setSources([])
+          setResearchStatus('offline')
+        }
       }
     }
 
     if (councilRoute.convene) {
       setCouncilRunning(true)
       try {
-        const topic = [...messages.slice(-4), userMessage].map((message) => `${message.role}: ${message.content}`).join('\n')
-        const response = await fetch(`${API}/council`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic, conversationId: activeConversationRef.current, research: webSources }) })
+        const topic = [...turn.history.slice(-4), { role: 'user', content }].map((message) => `${message.role}: ${message.content}`).join('\n')
+        const response = await fetch(`${API}/council`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic, conversationId: turn.conversationId, research: webSources }) })
         if (!response.ok) {
           const failure = await response.json().catch(() => ({ error: 'Astrium returned an invalid response.' }))
           throw new Error(failure.error || 'Astrium is unavailable.')
         }
         const report: CouncilReport = await response.json()
-        setCouncilReport(report)
-        setCouncilOpen(true)
         const introduction = councilRoute.automatic ? `${councilRoute.reason} I convened Astrium.` : 'I have summoned Astrium at your request.'
-        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `${introduction}\n\nAstrium decision: ${report.conclusion}`, time: formatTime() }
-        setMessages((current) => [...current, assistantMessage])
-        void persistMessage(assistantMessage)
-        speak(assistantMessage.content)
-        setLocalReady(true)
-        void refreshConversations()
+        return { content: `${introduction}\n\nAstrium decision: ${report.conclusion}`, localReady: true, councilReport: report }
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'The cause was not reported.'
-        const assistantMessage: Message = { id: Date.now() + 1, role: 'assistant', content: `Astrium could not complete its deliberation. ${detail}`, time: formatTime() }
-        setMessages((current) => [...current, assistantMessage])
-        void persistMessage(assistantMessage)
-        speak(assistantMessage.content)
+        return { content: `Astrium could not complete its deliberation. ${detail}`, localReady: false }
       } finally {
         setCouncilRunning(false)
-        setThinking(false)
-        if (!window.speechSynthesis.speaking) thinkingRef.current = false
-        if (shouldGenerateTitle) void generateConversationTitle(content, conversationId)
       }
-      return
     }
 
     try {
       const response = await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content, history: messages.slice(-8), research: webSources }),
+        body: JSON.stringify({ message: content, history: turn.history.slice(-8), research: webSources }),
       })
       if (!response.ok) throw new Error('Local model unavailable')
       const payload = await response.json()
-      const assistantMessage: Message = {
-        id: Date.now() + 1, role: 'assistant', content: payload.message, time: formatTime(),
-      }
-      setMessages((current) => [
-        ...current,
-        assistantMessage,
-      ])
-      speak(assistantMessage.content)
-      void persistMessage(assistantMessage)
-      void refreshConversations()
-      setLocalReady(true)
+      return { content: payload.message, localReady: true }
     } catch {
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content:
-          'The local intelligence service is not online yet. The command centre remains private and functional; install Ollama, then start a local model to speak with me without an API bill.',
-        time: formatTime(),
-      }
-      setMessages((current) => [
-        ...current,
-        assistantMessage,
-      ])
-      speak(assistantMessage.content)
-      void persistMessage(assistantMessage)
-      setLocalReady(false)
-    } finally {
-      setThinking(false)
-      if (shouldGenerateTitle) void generateConversationTitle(content, conversationId)
-      if (!window.speechSynthesis.speaking) {
-        thinkingRef.current = false
-        if (voiceModeRef.current) beginListening()
+      return {
+        content: 'The local intelligence service is not online yet. The command centre remains private and functional; install Ollama, then start a local model to speak with me without an API bill.',
+        localReady: false,
       }
     }
+  }
+
+  function commitTurnResult(turn: QueuedTurn, result: TurnResult) {
+    const assistantMessage: Message = { id: nextMessageId(), role: 'assistant', content: result.content, time: formatTime() }
+    if (activeConversationRef.current === turn.conversationId) {
+      appendVisibleMessage(assistantMessage)
+      if (result.councilReport) {
+        setCouncilReport(result.councilReport)
+        setCouncilOpen(true)
+      }
+      speak(assistantMessage.content)
+    }
+    void persistMessage(assistantMessage, turn.conversationId)
+    setLocalReady(result.localReady)
+    void refreshConversations()
+    if (turn.shouldGenerateTitle) void generateConversationTitle(turn.content, turn.conversationId)
+  }
+
+  async function processTurnQueue() {
+    if (processingTurnRef.current || turnQueueRef.current.length === 0) return
+    const turn = turnQueueRef.current.shift()!
+    processingTurnRef.current = true
+    activeTurnRef.current = turn
+    thinkingRef.current = true
+    setThinking(true)
+
+    try {
+      const result = await executeTurn(turn)
+      const clarifications: QueuedTurn[] = []
+      while (turnQueueRef.current[0]?.relation === 'clarification' && turnQueueRef.current[0].conversationId === turn.conversationId) {
+        clarifications.push(turnQueueRef.current.shift()!)
+      }
+
+      if (clarifications.length > 0) {
+        const lastClarification = clarifications[clarifications.length - 1]
+        turnQueueRef.current.unshift({
+          id: lastClarification.id,
+          content: combineTurnContent(turn, clarifications),
+          conversationId: turn.conversationId,
+          relation: 'new-topic',
+          sourceMessageIds: [...turn.sourceMessageIds, ...clarifications.flatMap((item) => item.sourceMessageIds)],
+          history: turn.history,
+          shouldGenerateTitle: turn.shouldGenerateTitle || clarifications.some((item) => item.shouldGenerateTitle),
+        })
+      } else {
+        commitTurnResult(turn, result)
+      }
+    } finally {
+      processingTurnRef.current = false
+      activeTurnRef.current = null
+      if (turnQueueRef.current.length > 0) {
+        window.setTimeout(() => void processTurnQueue(), 0)
+      } else {
+        thinkingRef.current = false
+        setThinking(false)
+      }
+    }
+  }
+
+  function submitMessage(contentOverride?: string) {
+    const content = (contentOverride ?? draft).trim()
+    if (!content) return
+    const conversationId = activeConversationRef.current
+    const shouldGenerateTitle = conversations.some((conversation) => conversation.id === conversationId && conversation.title === 'New conversation')
+    const queuedTarget = turnQueueRef.current[turnQueueRef.current.length - 1]
+    const activeTarget = activeTurnRef.current?.conversationId === conversationId ? activeTurnRef.current : null
+    const target = queuedTarget?.conversationId === conversationId ? queuedTarget : activeTarget
+    const relation = target ? classifyInterruption(target.content, content) : 'new-topic'
+    const userMessage: Message = { id: nextMessageId(), role: 'user', content, time: formatTime() }
+    const unresolvedMessageIds = new Set([
+      ...(activeTarget?.sourceMessageIds ?? []),
+      ...turnQueueRef.current.filter((item) => item.conversationId === conversationId).flatMap((item) => item.sourceMessageIds),
+    ])
+    const history = messagesRef.current.filter((message) => !unresolvedMessageIds.has(message.id)).slice(-8)
+
+    appendVisibleMessage(userMessage)
+    if (/\b(plan|project|build|develop|design)\b/i.test(content) && !workspaces.some((workspace) => workspace.name === 'Planning')) setWorkspaceSuggestion('Planning')
+    void persistMessage(userMessage, conversationId)
+    setDraft('')
+    if (composerRef.current) composerRef.current.style.height = 'auto'
+    turnQueueRef.current.push({ id: userMessage.id, content, conversationId, relation, sourceMessageIds: [userMessage.id], history, shouldGenerateTitle })
+    void processTurnQueue()
   }
 
   function sendMessage(event: FormEvent) {
@@ -308,6 +410,10 @@ function App() {
   function speak(text: string, force = false) {
     if (!('speechSynthesis' in window)) return
     if (!force && !autoSpeak && !voiceModeRef.current) return
+    const speechGeneration = ++speechGenerationRef.current
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    speakingRef.current = true
     window.speechSynthesis.cancel()
     window.speechSynthesis.resume()
     const spokenText = text.replace(/```[\s\S]*?```/g, ' code omitted ').replace(/[*_#`~>|[\](){}]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -319,21 +425,19 @@ function App() {
     utterance.lang = selectedVoice?.lang || 'en-GB'
     utterance.rate = voiceRate
     setSpeaking(true)
-    utterance.onend = () => {
+    const finishSpeaking = () => {
+      if (speechGenerationRef.current !== speechGeneration) return
+      speakingRef.current = false
       setSpeaking(false)
-      thinkingRef.current = false
       if (voiceModeRef.current) beginListening()
     }
-    utterance.onerror = () => {
-      setSpeaking(false)
-      thinkingRef.current = false
-      if (voiceModeRef.current) beginListening()
-    }
+    utterance.onend = finishSpeaking
+    utterance.onerror = finishSpeaking
     window.speechSynthesis.speak(utterance)
   }
 
   function beginListening() {
-    if (!voiceModeRef.current || thinkingRef.current || recognitionRef.current) return
+    if (!voiceModeRef.current || speakingRef.current || recognitionRef.current) return
     const Recognition = (window as unknown as { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any }).SpeechRecognition
       ?? (window as unknown as { webkitSpeechRecognition?: new () => any }).webkitSpeechRecognition
     if (!Recognition) {
@@ -365,11 +469,11 @@ function App() {
     }
     recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null
-      if (voiceModeRef.current && !thinkingRef.current && !voiceSubmitTimer.current) window.setTimeout(beginListening, 350)
+      if (voiceModeRef.current && !speakingRef.current && !voiceSubmitTimer.current) window.setTimeout(beginListening, 350)
     }
     recognition.onerror = () => {
       recognitionRef.current = null
-      if (voiceModeRef.current && !thinkingRef.current) window.setTimeout(beginListening, 600)
+      if (voiceModeRef.current && !speakingRef.current) window.setTimeout(beginListening, 600)
     }
     recognition.start()
   }
@@ -427,6 +531,8 @@ function App() {
       voiceSubmitTimer.current = undefined
       recognitionRef.current?.stop()
       recognitionRef.current = null
+      speechGenerationRef.current += 1
+      speakingRef.current = false
       window.speechSynthesis?.cancel()
       setSpeaking(false)
       stopVoiceMeter()
@@ -592,7 +698,7 @@ function App() {
   const voiceStatus = {
     idle: { title: 'Voice session paused' },
     listening: { title: 'Listening' },
-    thinking: { title: councilRunning ? 'Astrium is deliberating' : 'Considering your request' },
+    thinking: { title: councilRunning ? 'Astrium is deliberating' : voiceActive ? 'Listening while considering' : 'Considering your request' },
     speaking: { title: 'Orion is speaking' },
   }[voicePhase]
 
