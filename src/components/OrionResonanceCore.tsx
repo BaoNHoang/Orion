@@ -43,7 +43,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let renderer: THREE.WebGLRenderer
     try {
-      renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true })
+      renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' })
     } catch {
       canvas.dataset.webgl = 'unavailable'
       return
@@ -143,7 +143,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false })
       const trail = new THREE.Line(geometry, material)
       orbit.add(trail)
-      return { orbit, body, bodyMaterial, positions, geometry, material, radius: 1.62 + index * 0.31, offset: index * Math.PI * 0.5 }
+      return { orbit, body, bodyMaterial, positions, geometry, material, radius: 1.62 + index * 0.31, angle: index * Math.PI * 0.5 }
     })
 
     const targetPrimary = new THREE.Color(palette.idle.primary)
@@ -152,6 +152,7 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
     let frame = 0
     let visible = true
     let previous = performance.now()
+    let smoothedEnergy = 0
 
     const resize = () => {
       const bounds = canvas.getBoundingClientRect()
@@ -181,7 +182,10 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       const colors = palette[currentPhase]
       const rawLevel = Math.min(Math.max(audioLevelRef.current ?? 0, 0), 1)
       const speakingPulse = currentPhase === 'speaking' ? 0.28 + Math.abs(Math.sin(time * 7.2) * Math.cos(time * 4.1)) * 0.52 : 0
-      const energy = Math.max(rawLevel, speakingPulse)
+      const targetEnergy = Math.max(rawLevel, speakingPulse)
+      const energyResponse = 1 - Math.exp(-delta * (targetEnergy > smoothedEnergy ? 12 : 5.5))
+      smoothedEnergy += (targetEnergy - smoothedEnergy) * energyResponse
+      const energy = smoothedEnergy
       const thinkingShift = currentPhase === 'thinking' ? (Math.sin(time * 0.75) + 1) * 0.5 : 0
 
       targetPrimary.setHex(colors.primary)
@@ -224,10 +228,10 @@ export default function OrionResonanceCore({ phase, audioLevelRef }: OrionResona
       starMaterial.opacity = 0.3 + energy * 0.34 + (currentPhase === 'council' ? 0.2 : 0)
 
       comets.forEach((comet, index) => {
-        const angle = time * (0.34 + speed * 0.19 + index * 0.025) + comet.offset
-        orbitPoint(comet.body.position, comet.radius, angle, index)
+        comet.angle += delta * (0.34 + speed * 0.19 + index * 0.025)
+        orbitPoint(comet.body.position, comet.radius, comet.angle, index)
         for (let point = 0; point < trailLength; point += 1) {
-          const trailAngle = angle - point * (0.026 + speed * 0.005)
+          const trailAngle = comet.angle - point * (0.026 + speed * 0.005)
           orbitPoint(tempPosition, comet.radius, trailAngle, index)
           comet.positions[point * 3] = tempPosition.x
           comet.positions[point * 3 + 1] = tempPosition.y

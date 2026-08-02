@@ -682,9 +682,7 @@ function App() {
             <Suspense fallback={<div className="resonance-loading" aria-hidden="true" />}>
               <OrionResonanceCore phase={resonancePhase} audioLevelRef={voiceLevelRef} />
             </Suspense>
-            <button type="button" className="resonance-control" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'}>
-              <span className="resonance-control-surface"><OrionIcon name={voiceActive ? 'mic' : 'mic-off'} size={23} /></span>
-            </button>
+            <button type="button" className="resonance-control" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'} />
           </div>
           <div className="voice-state-copy" aria-live="polite">
             <h3>{voiceStatus.title}</h3>
