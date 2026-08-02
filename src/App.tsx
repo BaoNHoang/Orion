@@ -561,6 +561,16 @@ function App() {
     return utterance
   }
 
+  function prepareSpeechText(text: string) {
+    return text
+      .replace(/```[\s\S]*?```/g, ' code omitted ')
+      .replace(/[*_#`~>|[\](){}]/g, ' ')
+      .replace(/(?:^|\s)\.(?=\s|$)/g, ' ')
+      .replace(/\s+\.$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
   function createStreamingSpeech(): StreamingSpeechController | null {
     if (!('speechSynthesis' in window) || (!autoSpeak && !voiceModeRef.current)) return null
     const speechGeneration = ++speechGenerationRef.current
@@ -581,7 +591,7 @@ function App() {
     }
 
     const enqueue = (text: string) => {
-      const spokenChunk = text.trim()
+      const spokenChunk = prepareSpeechText(text)
       if (!spokenChunk) return
       if (!speakingRef.current) {
         speakingRef.current = true
@@ -638,7 +648,7 @@ function App() {
     speakingRef.current = true
     window.speechSynthesis.cancel()
     window.speechSynthesis.resume()
-    const spokenText = text.replace(/```[\s\S]*?```/g, ' code omitted ').replace(/[*_#`~>|[\](){}]/g, ' ').replace(/\s+/g, ' ').trim()
+    const spokenText = prepareSpeechText(text)
     spokenTextRef.current = spokenText
     const utterance = createSpeechUtterance(spokenText)
     setSpeaking(true)
