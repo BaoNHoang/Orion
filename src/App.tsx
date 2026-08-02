@@ -22,6 +22,7 @@ type Memory = { id: number; category: string; value: string; sensitive: number; 
 type Workspace = { id: number; name: string; color: string }
 type Conversation = { id: number; title: string; workspace: string; message_count: number }
 type ConversationSearchResult = { id: number; title: string; workspace: string; snippet: string }
+type ConversationMode = 'text' | 'voice'
 
 const API = 'http://127.0.0.1:8787/api'
 
@@ -40,6 +41,8 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
   const [voiceActive, setVoiceActive] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
+  const [conversationMode, setConversationMode] = useState<ConversationMode>(() => localStorage.getItem('orion.conversationMode') === 'voice' ? 'voice' : 'text')
   const [councilOpen, setCouncilOpen] = useState(true)
   const [localReady, setLocalReady] = useState(false)
   const [thinking, setThinking] = useState(false)
@@ -55,6 +58,7 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null)
   const [sources, setSources] = useState<WebSource[]>([])
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [researchStatus, setResearchStatus] = useState<'idle' | 'searching' | 'online' | 'offline'>('idle')
   const [creatingConversation, setCreatingConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -306,11 +310,14 @@ function App() {
     if (selectedVoice) utterance.voice = selectedVoice
     utterance.lang = selectedVoice?.lang || 'en-GB'
     utterance.rate = voiceRate
+    setSpeaking(true)
     utterance.onend = () => {
+      setSpeaking(false)
       thinkingRef.current = false
       if (voiceModeRef.current) beginListening()
     }
     utterance.onerror = () => {
+      setSpeaking(false)
       thinkingRef.current = false
       if (voiceModeRef.current) beginListening()
     }
@@ -368,11 +375,17 @@ function App() {
       recognitionRef.current?.stop()
       recognitionRef.current = null
       window.speechSynthesis?.cancel()
+      setSpeaking(false)
       return
     }
     setVoiceActive(true)
     voiceModeRef.current = true
     beginListening()
+  }
+
+  function selectConversationMode(mode: ConversationMode) {
+    setConversationMode(mode)
+    localStorage.setItem('orion.conversationMode', mode)
   }
 
   async function conveneCouncil() {
@@ -519,6 +532,14 @@ function App() {
     }
   }
 
+  const voicePhase = speaking ? 'speaking' : thinking || councilRunning ? 'thinking' : voiceActive ? 'listening' : 'idle'
+  const voiceStatus = {
+    idle: { title: 'Voice session paused' },
+    listening: { title: 'Listening' },
+    thinking: { title: councilRunning ? 'Astrium is deliberating' : 'Considering your request' },
+    speaking: { title: 'Orion is speaking' },
+  }[voicePhase]
+
   return (
     <main className={`command-centre ${contextVisible ? '' : 'context-hidden'}`}>
       <aside className="rail" aria-label="Primary navigation">
@@ -568,12 +589,16 @@ function App() {
             <div><h2>Orion</h2><p>{localReady ? 'Local intelligence ready' : 'Private local session'}</p></div>
           </div>
           <div className="header-actions">
+            <div className="conversation-modes" role="group" aria-label="Conversation view">
+              <button type="button" className={conversationMode === 'text' ? 'active' : ''} aria-pressed={conversationMode === 'text'} onClick={() => selectConversationMode('text')}>Text</button>
+              <button type="button" className={conversationMode === 'voice' ? 'active' : ''} aria-pressed={conversationMode === 'voice'} onClick={() => selectConversationMode('voice')}>Voice</button>
+            </div>
             <button className="quiet-button" onClick={prepareWebResearch}><OrionIcon name="compass" size={16} /> Browse</button>
             <button className="icon-button" title={contextVisible ? 'Hide context' : 'Show context'} onClick={() => setContextVisible((visible) => !visible)}><OrionIcon name="panel" size={18} /></button>
           </div>
         </header>
 
-        <div className="message-list" ref={messageListRef}>
+        {conversationMode === 'text' ? <><div className="message-list" ref={messageListRef}>
           <div className="date-rule"><span>Today</span></div>
           {messages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>
@@ -596,7 +621,19 @@ function App() {
             <button type="submit" className="send-button" aria-label="Send message"><OrionIcon name="chevron" size={18} /></button>
           </div>
           <p>{voiceActive ? 'Voice session active. Audio is never retained.' : 'Private by default. Personal memories require consent.'}</p>
-        </form>
+        </form></> : <section className={`voice-stage ${voicePhase}`} aria-label={`Orion voice mode. ${voiceStatus.title}`}>
+          <div className="voice-presence-wrap">
+            <span className="voice-ring voice-ring-outer" aria-hidden="true" />
+            <span className="voice-ring voice-ring-inner" aria-hidden="true" />
+            <button type="button" className="voice-presence" onClick={toggleVoice} aria-label={voiceActive ? 'End voice session' : 'Begin voice session'} title={voiceActive ? 'End voice session' : 'Begin voice session'}>
+              <span className="voice-bars" aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <i key={index} />)}</span>
+              <OrionIcon name={voiceActive ? 'mic' : 'mic-off'} size={25} />
+            </button>
+          </div>
+          <div className="voice-state-copy" aria-live="polite">
+            <h3>{voiceStatus.title}</h3>
+          </div>
+        </section>}
       </section>
 
       <aside className={`context-panel ${contextVisible ? 'context-visible' : ''}`}>
@@ -624,11 +661,16 @@ function App() {
         </section>
 
         <section className="context-card source-card">
-          <div className="card-heading"><span>Sources</span><OrionIcon name="search" size={15} /></div>
-          {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
-          {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
-          {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
-          {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><span className="source-status">{source.retrieved ? 'Page reviewed' : 'Search summary'}</span><p>{source.evidence || source.snippet}</p></a>)}</div>}
+          <button className="source-toggle" onClick={() => setSourcesOpen((open) => !open)} aria-expanded={sourcesOpen}>
+            <span><OrionIcon name="search" size={15} /> Sources</span>
+            <span className="source-toggle-status">{researchStatus === 'searching' ? 'Searching' : sources.length ? `${sources.length} sources` : researchStatus === 'offline' ? 'Offline' : 'None'} <OrionIcon name="chevron" className={sourcesOpen ? 'up' : ''} size={15} /></span>
+          </button>
+          {sourcesOpen && <div className="source-content">
+            {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
+            {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
+            {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
+            {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><span className="source-status">{source.retrieved ? 'Page reviewed' : 'Search summary'}</span><p>{source.evidence || source.snippet}</p></a>)}</div>}
+          </div>}
         </section>
       </aside>
       {memoryOpen && <div className="modal-backdrop" role="presentation">
