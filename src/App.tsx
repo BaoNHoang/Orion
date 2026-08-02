@@ -16,7 +16,7 @@ type CouncilReport = {
 }
 
 type CouncilRoute = { convene: boolean; automatic: boolean; reason: string; research?: boolean; researchQuery?: string }
-type WebSource = { title: string; url: string; snippet: string; published?: string | null }
+type WebSource = { title: string; url: string; snippet: string; evidence?: string; published?: string | null; retrieved?: boolean }
 
 type Memory = { id: number; category: string; value: string; sensitive: number; approved: number }
 type Workspace = { id: number; name: string; color: string }
@@ -628,7 +628,7 @@ function App() {
           {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
           {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
           {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
-          {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><p>{source.snippet}</p></a>)}</div>}
+          {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><span className="source-status">{source.retrieved ? 'Page reviewed' : 'Search summary'}</span><p>{source.evidence || source.snippet}</p></a>)}</div>}
         </section>
       </aside>
       {memoryOpen && <div className="modal-backdrop" role="presentation">
