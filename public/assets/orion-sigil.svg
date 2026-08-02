@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Orion sigil</title>
+  <desc id="desc">A connected constellation forming Orion's command sigil</desc>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5.5 20.5 10 8.7l7.2 4.2 8.8-6.2-2.3 12.6-8.3 6.1-9.9-4.9Z" stroke="#4b766f" stroke-width="1.2"/>
+    <path d="m10 8.7 5.4 16.7 1.8-12.5 6.5 6.4M5.5 20.5l11.7-7.6" stroke="#92e5d1" stroke-width="1.5"/>
+    <circle cx="10" cy="8.7" r="2.2" fill="#10181d" stroke="#92e5d1" stroke-width="1.4"/>
+    <circle cx="26" cy="6.7" r="1.8" fill="#92e5d1"/>
+    <circle cx="5.5" cy="20.5" r="1.8" fill="#92e5d1"/>
+    <circle cx="17.2" cy="12.9" r="2.5" fill="#10181d" stroke="#b4f3e4" stroke-width="1.5"/>
+    <circle cx="23.7" cy="19.3" r="1.8" fill="#92e5d1"/>
+    <circle cx="15.4" cy="25.4" r="2" fill="#10181d" stroke="#92e5d1" stroke-width="1.4"/>
+  </g>
+</svg>
