@@ -55,6 +55,7 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null)
   const [sources, setSources] = useState<WebSource[]>([])
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const [researchStatus, setResearchStatus] = useState<'idle' | 'searching' | 'online' | 'offline'>('idle')
   const [creatingConversation, setCreatingConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -624,11 +625,16 @@ function App() {
         </section>
 
         <section className="context-card source-card">
-          <div className="card-heading"><span>Sources</span><OrionIcon name="search" size={15} /></div>
-          {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
-          {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
-          {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
-          {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><span className="source-status">{source.retrieved ? 'Page reviewed' : 'Search summary'}</span><p>{source.evidence || source.snippet}</p></a>)}</div>}
+          <button className="source-toggle" onClick={() => setSourcesOpen((open) => !open)} aria-expanded={sourcesOpen}>
+            <span><OrionIcon name="search" size={15} /> Sources</span>
+            <span className="source-toggle-status">{researchStatus === 'searching' ? 'Searching' : sources.length ? `${sources.length} sources` : researchStatus === 'offline' ? 'Offline' : 'None'} <OrionIcon name="chevron" className={sourcesOpen ? 'up' : ''} size={15} /></span>
+          </button>
+          {sourcesOpen && <div className="source-content">
+            {researchStatus === 'searching' && <p>Searching the web for current evidence...</p>}
+            {researchStatus === 'offline' && <p>Internet research is unavailable. Orion will identify current claims as unverified.</p>}
+            {researchStatus === 'idle' && !sources.length && <p>No web research was needed for this conversation.</p>}
+            {sources.length > 0 && <div className="source-list">{sources.map((source) => <a href={source.url} target="_blank" rel="noreferrer" key={source.url}><strong>{source.title}</strong><span>{new URL(source.url).hostname.replace(/^www\./, '')}</span><span className="source-status">{source.retrieved ? 'Page reviewed' : 'Search summary'}</span><p>{source.evidence || source.snippet}</p></a>)}</div>}
+          </div>}
         </section>
       </aside>
       {memoryOpen && <div className="modal-backdrop" role="presentation">
