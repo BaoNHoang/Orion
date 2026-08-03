@@ -679,7 +679,7 @@ function App() {
     recognitionRef.current = recognition
     recognition.lang = 'en-GB'
     recognition.interimResults = true
-    recognition.continuous = false
+    recognition.continuous = true
     recognition.onresult = (event: any) => {
       const transcript = Array.from(event.results).slice(event.resultIndex).map((result: any) => result[0].transcript).join('')
       if (speakingRef.current && isLikelySpeechEcho(transcript, spokenTextRef.current)) return
