@@ -118,10 +118,11 @@ function isLikelySpeechEcho(transcript: string, spokenText: string) {
   if (!heard || !spoken) return false
 
   const heardWords = heard.split(' ')
-  if (heardWords.length < 2) return !/^(stop|wait|cancel|orion)$/.test(heard)
+  const spokenWords = new Set(spoken.split(' '))
+  if (/^(stop|wait|cancel|orion|no|yes|actually|pause|enough)$/.test(heard)) return false
+  if (heardWords.length < 2) return spokenWords.has(heard)
   if (spoken.includes(heard)) return true
 
-  const spokenWords = new Set(spoken.split(' '))
   const overlap = heardWords.filter((word) => spokenWords.has(word)).length
   return heardWords.length >= 4 && overlap / heardWords.length >= 0.8
 }
@@ -226,6 +227,7 @@ function App() {
   const turnQueueRef = useRef<QueuedTurn[]>([])
   const processingTurnRef = useRef(false)
   const activeTurnRef = useRef<QueuedTurn | null>(null)
+  const activeTurnAbortRef = useRef<AbortController | null>(null)
   const messageSequenceRef = useRef(Date.now())
   const messageListRef = useRef<HTMLDivElement>(null)
   const activeConversationRef = useRef(0)
@@ -355,7 +357,7 @@ function App() {
     setMessages(messagesRef.current)
   }
 
-  async function executeTurn(turn: QueuedTurn, onStream: (event: ChatStreamEvent) => void): Promise<TurnResult> {
+  async function executeTurn(turn: QueuedTurn, onStream: (event: ChatStreamEvent) => void, signal: AbortSignal): Promise<TurnResult> {
     const content = turn.content
     let councilRoute: CouncilRoute = {
       convene: /\b(astrium|council|advisers|advisors|nebula|helix|nereid|nova)\b/i.test(content),
@@ -364,9 +366,10 @@ function App() {
     }
     try {
       const routingContext = [...turn.history.slice(-4), { role: 'user', content }].map((message) => `${message.role}: ${message.content}`).join('\n')
-      const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context: routingContext }) })
+      const routeResponse = await fetch(`${API}/route`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context: routingContext }), signal })
       if (routeResponse.ok) councilRoute = await routeResponse.json()
-    } catch {
+    } catch (error) {
+      if (signal.aborted) throw error
       // Explicit Astrium requests still work if the lightweight router is unavailable.
     }
 
@@ -375,7 +378,7 @@ function App() {
     if (councilRoute.research && (autoResearch || explicitResearch)) {
       setResearchStatus('searching')
       try {
-        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: councilRoute.researchQuery || content, conversationId: turn.conversationId }) })
+        const researchResponse = await fetch(`${API}/research`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: councilRoute.researchQuery || content, conversationId: turn.conversationId }), signal })
         if (!researchResponse.ok) throw new Error('Research unavailable')
         const researchPayload = await researchResponse.json()
         webSources = researchPayload.sources ?? []
@@ -383,7 +386,8 @@ function App() {
           setSources(webSources)
           setResearchStatus('online')
         }
-      } catch {
+      } catch (error) {
+        if (signal.aborted) throw error
         if (activeConversationRef.current === turn.conversationId) {
           setSources([])
           setResearchStatus('offline')
@@ -395,7 +399,7 @@ function App() {
       setCouncilRunning(true)
       try {
         const topic = [...turn.history.slice(-4), { role: 'user', content }].map((message) => `${message.role}: ${message.content}`).join('\n')
-        const response = await fetch(`${API}/council`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic, conversationId: turn.conversationId, research: webSources }) })
+        const response = await fetch(`${API}/council`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic, conversationId: turn.conversationId, research: webSources }), signal })
         if (!response.ok) {
           const failure = await response.json().catch(() => ({ error: 'Astrium returned an invalid response.' }))
           throw new Error(failure.error || 'Astrium is unavailable.')
@@ -404,6 +408,7 @@ function App() {
         const introduction = councilRoute.automatic ? `${councilRoute.reason} I convened Astrium.` : 'I have summoned Astrium at your request.'
         return { content: `${introduction}\n\nAstrium decision: ${report.conclusion}`, localReady: true, councilReport: report }
       } catch (error) {
+        if (signal.aborted) throw error
         const detail = error instanceof Error ? error.message : 'The cause was not reported.'
         const failure = 'Astrium could not complete its deliberation.'
         return { content: detail.startsWith(failure) ? detail : `${failure} ${detail}`, localReady: false }
@@ -417,10 +422,12 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content, history: turn.history.slice(-8), research: webSources }),
+        signal,
       })
       const payload = await readChatResponse(response, onStream)
       return { content: payload.message, localReady: true, streamed: payload.streamed }
-    } catch {
+    } catch (error) {
+      if (signal.aborted) throw error
       return {
         content: 'The local intelligence service is not online yet. The command centre remains private and functional; install Ollama, then start a local model to speak with me without an API bill.',
         localReady: false,
@@ -448,12 +455,39 @@ function App() {
   async function processTurnQueue() {
     if (processingTurnRef.current || turnQueueRef.current.length === 0) return
     const turn = turnQueueRef.current.shift()!
+    const abortController = new AbortController()
     processingTurnRef.current = true
     activeTurnRef.current = turn
+    activeTurnAbortRef.current = abortController
     thinkingRef.current = true
     setThinking(true)
     let streamedMessageId: number | undefined
     const streamingState: { speech: StreamingSpeechController | null } = { speech: null }
+
+    const discardInterruptedOutput = () => {
+      setStreamingResponse(false)
+      if (streamedMessageId) removeVisibleMessage(streamedMessageId)
+      streamingState.speech?.cancel()
+    }
+
+    const rerouteClarifications = () => {
+      const clarifications: QueuedTurn[] = []
+      while (turnQueueRef.current[0]?.relation === 'clarification' && turnQueueRef.current[0].conversationId === turn.conversationId) {
+        clarifications.push(turnQueueRef.current.shift()!)
+      }
+      if (!clarifications.length) return false
+      const lastClarification = clarifications[clarifications.length - 1]
+      turnQueueRef.current.unshift({
+        id: lastClarification.id,
+        content: combineTurnContent(turn, clarifications),
+        conversationId: turn.conversationId,
+        relation: 'new-topic',
+        sourceMessageIds: [...turn.sourceMessageIds, ...clarifications.flatMap((item) => item.sourceMessageIds)],
+        history: turn.history,
+        shouldGenerateTitle: turn.shouldGenerateTitle || clarifications.some((item) => item.shouldGenerateTitle),
+      })
+      return true
+    }
 
     const handleStream = (event: ChatStreamEvent) => {
       if (activeConversationRef.current !== turn.conversationId) return
@@ -476,34 +510,22 @@ function App() {
     }
 
     try {
-      const result = await executeTurn(turn, handleStream)
-      const clarifications: QueuedTurn[] = []
-      while (turnQueueRef.current[0]?.relation === 'clarification' && turnQueueRef.current[0].conversationId === turn.conversationId) {
-        clarifications.push(turnQueueRef.current.shift()!)
-      }
-
-      if (clarifications.length > 0) {
-        setStreamingResponse(false)
-        if (streamedMessageId) removeVisibleMessage(streamedMessageId)
-        streamingState.speech?.cancel()
-        const lastClarification = clarifications[clarifications.length - 1]
-        turnQueueRef.current.unshift({
-          id: lastClarification.id,
-          content: combineTurnContent(turn, clarifications),
-          conversationId: turn.conversationId,
-          relation: 'new-topic',
-          sourceMessageIds: [...turn.sourceMessageIds, ...clarifications.flatMap((item) => item.sourceMessageIds)],
-          history: turn.history,
-          shouldGenerateTitle: turn.shouldGenerateTitle || clarifications.some((item) => item.shouldGenerateTitle),
-        })
+      const result = await executeTurn(turn, handleStream, abortController.signal)
+      if (rerouteClarifications()) {
+        discardInterruptedOutput()
       } else {
         if (!result.streamed) streamingState.speech?.cancel()
         commitTurnResult(turn, result, streamedMessageId, Boolean(result.streamed && streamingState.speech))
       }
+    } catch (error) {
+      if (!abortController.signal.aborted) throw error
+      discardInterruptedOutput()
+      rerouteClarifications()
     } finally {
       setStreamingResponse(false)
       processingTurnRef.current = false
       activeTurnRef.current = null
+      if (activeTurnAbortRef.current === abortController) activeTurnAbortRef.current = null
       if (turnQueueRef.current.length > 0) {
         window.setTimeout(() => void processTurnQueue(), 0)
       } else {
@@ -542,6 +564,7 @@ function App() {
     setDraft('')
     if (composerRef.current) composerRef.current.style.height = 'auto'
     turnQueueRef.current.push({ id: userMessage.id, content, conversationId, relation, sourceMessageIds: [userMessage.id], history, shouldGenerateTitle })
+    if (activeTarget) activeTurnAbortRef.current?.abort()
     void processTurnQueue()
   }
 
