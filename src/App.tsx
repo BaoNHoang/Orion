@@ -607,6 +607,7 @@ function App() {
       utterance.onend = finishChunk
       utterance.onerror = finishChunk
       window.speechSynthesis.speak(utterance)
+      if (voiceModeRef.current) beginListening()
     }
 
     return {
