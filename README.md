@@ -30,8 +30,8 @@ npm.cmd run build
 ## Branch model
 
 - `main` contains reviewed releases.
-- `develop` is the integration branch.
-- New work uses `feature/*`, `fix/*`, or `chore/*` branches and targets `develop` through a pull request.
+- `develop` is the active integration branch and currently accepts direct pushes.
+- `main` remains protected; promote reviewed `develop` changes through a pull request.
 - Release pull requests merge `develop` into `main`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
