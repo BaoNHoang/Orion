@@ -649,12 +649,32 @@ async function handleRequest(request, response) {
   }
 
   if (request.method === 'POST' && request.url === '/api/workspaces') {
-    let body = ''
-    for await (const chunk of request) body += chunk
-    const { name, color = 'planning' } = JSON.parse(body)
-    const result = database.prepare('INSERT OR IGNORE INTO workspaces (name, color) VALUES (?, ?)').run(name.trim(), color)
-    const workspace = result.changes ? database.prepare('SELECT id, name, color FROM workspaces WHERE id = ?').get(Number(result.lastInsertRowid)) : database.prepare('SELECT id, name, color FROM workspaces WHERE name = ?').get(name.trim())
+    const { name = '', color = '#79cdb9' } = await readBody(request)
+    const workspaceName = String(name).trim().slice(0, 40)
+    if (!workspaceName || workspaceName.toLowerCase() === 'inbox') return json(response, 400, { error: 'Choose a category name other than Inbox.' })
+    if (database.prepare('SELECT 1 FROM workspaces WHERE lower(name) = lower(?)').get(workspaceName)) return json(response, 409, { error: 'A category with that name already exists.' })
+    const workspaceColor = /^#[0-9a-f]{6}$/i.test(String(color)) ? String(color) : '#79cdb9'
+    const result = database.prepare('INSERT INTO workspaces (name, color) VALUES (?, ?)').run(workspaceName, workspaceColor)
+    const workspace = database.prepare('SELECT id, name, color FROM workspaces WHERE id = ?').get(Number(result.lastInsertRowid))
     return json(response, 201, { workspace })
+  }
+
+  const workspaceMatch = url.pathname.match(/^\/api\/workspaces\/(\d+)$/)
+  if (request.method === 'DELETE' && workspaceMatch) {
+    const workspaceId = Number(workspaceMatch[1])
+    const workspace = database.prepare('SELECT id, name FROM workspaces WHERE id = ?').get(workspaceId)
+    if (!workspace) return json(response, 404, { error: 'Category not found.' })
+    if (workspace.name === 'Inbox') return json(response, 400, { error: 'Inbox cannot be deleted.' })
+    database.exec('BEGIN')
+    try {
+      database.prepare("UPDATE conversations SET workspace = 'Inbox' WHERE workspace = ?").run(workspace.name)
+      database.prepare('DELETE FROM workspaces WHERE id = ?').run(workspaceId)
+      database.exec('COMMIT')
+    } catch (error) {
+      database.exec('ROLLBACK')
+      throw error
+    }
+    return json(response, 200, { deleted: true, movedTo: 'Inbox' })
   }
 
   if (request.method === 'POST' && request.url === '/api/memories') {
@@ -707,11 +727,12 @@ async function handleRequest(request, response) {
   if (request.method === 'POST' && url.pathname === '/api/conversations') {
     let body = ''
     for await (const chunk of request) body += chunk
-    const { title = 'New conversation', workspace = 'Inbox' } = JSON.parse(body || '{}')
+    const { title = 'New conversation' } = JSON.parse(body || '{}')
+    const workspace = 'Inbox'
     if (title === 'New conversation') {
       const existing = database.prepare(`SELECT c.id, c.title, c.workspace, c.created_at, COUNT(m.id) AS message_count
         FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id
-        WHERE c.title = 'New conversation' AND NOT EXISTS (SELECT 1 FROM messages u WHERE u.conversation_id = c.id AND u.role = 'user')
+        WHERE c.title = 'New conversation' AND c.workspace = 'Inbox' AND NOT EXISTS (SELECT 1 FROM messages u WHERE u.conversation_id = c.id AND u.role = 'user')
         GROUP BY c.id ORDER BY c.id DESC LIMIT 1`).get()
       if (existing) return json(response, 200, { conversation: existing, reused: true })
     }
@@ -724,7 +745,11 @@ async function handleRequest(request, response) {
   if (request.method === 'PATCH' && conversationMatch) {
     const conversationId = Number(conversationMatch[1])
     const { workspace, title } = await readBody(request)
-    if (workspace) database.prepare('UPDATE conversations SET workspace = ? WHERE id = ?').run(workspace, conversationId)
+    if (workspace) {
+      const destination = database.prepare('SELECT name FROM workspaces WHERE name = ?').get(String(workspace))
+      if (!destination) return json(response, 400, { error: 'Choose an existing category.' })
+      database.prepare('UPDATE conversations SET workspace = ? WHERE id = ?').run(destination.name, conversationId)
+    }
     if (title) database.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(title, conversationId)
     return json(response, 200, { updated: true })
   }

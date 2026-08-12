@@ -189,7 +189,6 @@ function App() {
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memorySensitive, setMemorySensitive] = useState(false)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [workspaceSuggestion, setWorkspaceSuggestion] = useState<string | null>(null)
   const [activeConversationId, setActiveConversationId] = useState(0)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null)
@@ -204,6 +203,8 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [workspaceName, setWorkspaceName] = useState('')
+  const [workspaceColor, setWorkspaceColor] = useState('#79cdb9')
+  const [workspaceError, setWorkspaceError] = useState('')
   const [activeWorkspace, setActiveWorkspace] = useState('Inbox')
   const [contextVisible, setContextVisible] = useState(() => window.innerWidth > 1100)
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
@@ -559,7 +560,6 @@ function App() {
     const history = messagesRef.current.filter((message) => !unresolvedMessageIds.has(message.id)).slice(-8)
 
     appendVisibleMessage(userMessage)
-    if (/\b(plan|project|build|develop|design)\b/i.test(content) && !workspaces.some((workspace) => workspace.name === 'Planning')) setWorkspaceSuggestion('Planning')
     void persistMessage(userMessage, conversationId)
     setDraft('')
     if (composerRef.current) composerRef.current.style.height = 'auto'
@@ -859,37 +859,58 @@ function App() {
     setMemories((current) => current.filter((memory) => memory.id !== id))
   }
 
-  async function approveWorkspace() {
-    if (!workspaceSuggestion) return
-    const response = await fetch(`${API}/workspaces`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: workspaceSuggestion, color: 'planning' }),
-    })
-    const payload = await response.json()
-    setWorkspaces((current) => [...current, payload.workspace])
-    await fetch(`${API}/conversations/${activeConversationRef.current}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspace: workspaceSuggestion }) })
-    setActiveWorkspace(workspaceSuggestion)
-    void refreshConversations()
-    setWorkspaceSuggestion(null)
-  }
-
   async function createWorkspace(event: FormEvent) {
     event.preventDefault()
     const name = workspaceName.trim()
-    if (!name) return
-    const response = await fetch(`${API}/workspaces`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, color: 'planning' }) })
-    if (!response.ok) return
+    if (!name) {
+      setWorkspaceError('Enter a category name.')
+      return
+    }
+    const response = await fetch(`${API}/workspaces`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, color: workspaceColor }) })
     const payload = await response.json()
+    if (!response.ok) {
+      setWorkspaceError(payload.error ?? 'The category could not be created.')
+      return
+    }
     setWorkspaces((current) => current.some((workspace) => workspace.id === payload.workspace.id) ? current : [...current, payload.workspace])
     setActiveWorkspace(payload.workspace.name)
     setWorkspaceName('')
+    setWorkspaceColor('#79cdb9')
+    setWorkspaceError('')
     setWorkspaceOpen(false)
+  }
+
+  async function deleteWorkspace(workspace: Workspace) {
+    if (workspace.name === 'Inbox') return
+    if (!window.confirm(`Delete ${workspace.name}? Its conversations will move to Inbox.`)) return
+    const response = await fetch(`${API}/workspaces/${workspace.id}`, { method: 'DELETE' })
+    if (!response.ok) return
+    setWorkspaces((current) => current.filter((item) => item.id !== workspace.id))
+    setConversations((current) => current.map((conversation) => conversation.workspace === workspace.name ? { ...conversation, workspace: 'Inbox' } : conversation))
+    if (activeWorkspace === workspace.name) setActiveWorkspace('Inbox')
+  }
+
+  async function moveConversation(conversationId: number, workspace: string) {
+    const response = await fetch(`${API}/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace }),
+    })
+    if (!response.ok) return
+    setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, workspace } : conversation))
+    if (conversationId === activeConversationRef.current) setActiveWorkspace(workspace)
+  }
+
+  function workspaceColorValue(color: string) {
+    const namedColors: Record<string, string> = { inbox: '#76d4bd', planning: '#e9b580', personal: '#a68ce4', projects: '#75afd7' }
+    return namedColors[color] ?? (/^#[0-9a-f]{6}$/i.test(color) ? color : '#79cdb9')
   }
 
   async function startNewConversation() {
     if (creatingConversationRef.current) return
     const activeConversation = conversations.find((conversation) => conversation.id === activeConversationRef.current)
-    if (activeConversation?.title === 'New conversation' && !messages.some((message) => message.role === 'user')) {
+    if (activeConversation?.workspace === 'Inbox' && activeConversation.title === 'New conversation' && !messages.some((message) => message.role === 'user')) {
+      setActiveWorkspace('Inbox')
       composerRef.current?.focus()
       return
     }
@@ -902,11 +923,12 @@ function App() {
       time: formatTime(),
     }
     try {
-      const response = await fetch(`${API}/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New conversation' }) })
+      const response = await fetch(`${API}/conversations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New conversation', workspace: 'Inbox' }) })
       if (!response.ok) return
       const payload = await response.json()
       setActiveConversationId(payload.conversation.id)
       activeConversationRef.current = payload.conversation.id
+      setActiveWorkspace('Inbox')
       if (payload.reused && payload.conversation.message_count > 0) {
         await loadEarlierConversation(payload.conversation.id)
         await refreshConversations()
@@ -990,15 +1012,15 @@ function App() {
         <button className="new-conversation" onClick={startNewConversation} disabled={creatingConversation}><OrionIcon name={creatingConversation ? 'council' : 'plus'} size={16} /> {creatingConversation ? 'Preparing conversation' : 'New conversation'}</button>
 
         <section className="workspace-section">
-          <div className="section-label"><span>Workspaces</span><button title="Create workspace" onClick={() => setWorkspaceOpen(true)}><OrionIcon name="plus" size={15} /></button></div>
+          <div className="section-label"><span>Categories</span><button title="Create category" onClick={() => { setWorkspaceError(''); setWorkspaceOpen(true) }}><OrionIcon name="plus" size={15} /></button></div>
           <button className={`workspace ${activeWorkspace === 'Inbox' ? 'active' : ''}`} onClick={() => setActiveWorkspace('Inbox')}><span className="workspace-dot inbox" />Inbox <span className="count">{conversations.filter((conversation) => conversation.workspace === 'Inbox').length}</span></button>
-          {workspaces.filter((workspace) => workspace.name !== 'Inbox').map((workspace) => <button className={`workspace ${activeWorkspace === workspace.name ? 'active' : ''}`} onClick={() => setActiveWorkspace(workspace.name)} key={workspace.id}><span className={`workspace-dot ${workspace.color}`} />{workspace.name}</button>)}
+          {workspaces.filter((workspace) => workspace.name !== 'Inbox').map((workspace) => <div className={`workspace-row ${activeWorkspace === workspace.name ? 'active' : ''}`} key={workspace.id}><button className="workspace" onClick={() => setActiveWorkspace(workspace.name)}><span className="workspace-dot" style={{ backgroundColor: workspaceColorValue(workspace.color) }} />{workspace.name}<span className="count">{conversations.filter((conversation) => conversation.workspace === workspace.name).length}</span></button><button className="delete-workspace" title={`Delete ${workspace.name}`} onClick={() => void deleteWorkspace(workspace)}><OrionIcon name="trash" size={13} /></button></div>)}
         </section>
 
         <section className="workspace-section recent-section">
           <div className="section-label"><span>Recent</span></div>
-          {visibleConversations.slice(0, 20).map((conversation) => <div className={`recent-row ${conversation.id === activeConversationId ? 'active-chat' : ''}`} key={conversation.id}><button className="recent-chat" onClick={() => loadEarlierConversation(conversation.id)}>{conversation.title}<span>{conversation.message_count} messages</span></button><button className="delete-chat" title="Delete chat" onClick={() => setPendingDelete(conversation)}><OrionIcon name="trash" size={13} /></button></div>)}
-          {visibleConversations.length === 0 && <p className="empty-workspace">No conversations in this workspace.</p>}
+          {visibleConversations.slice(0, 20).map((conversation) => <div className={`recent-row ${conversation.id === activeConversationId ? 'active-chat' : ''}`} key={conversation.id}><button className="recent-chat" onClick={() => loadEarlierConversation(conversation.id)}>{conversation.title}<span>{conversation.message_count} messages</span></button><select className="move-chat" aria-label={`Move ${conversation.title} to category`} title="Move chat" value={conversation.workspace} onChange={(event) => void moveConversation(conversation.id, event.target.value)}>{workspaces.map((workspace) => <option key={workspace.id} value={workspace.name}>{workspace.name}</option>)}</select><button className="delete-chat" title="Delete chat" onClick={() => setPendingDelete(conversation)}><OrionIcon name="trash" size={13} /></button></div>)}
+          {visibleConversations.length === 0 && <p className="empty-workspace">No conversations in this category.</p>}
         </section>
 
         <footer className="local-status">
@@ -1062,8 +1084,6 @@ function App() {
 
       <aside className={`context-panel ${contextVisible ? 'context-visible' : ''}`}>
         <header className="context-header"><div><h2>Considerations</h2></div><button className="icon-button" title="Close context" onClick={() => setContextVisible(false)}><OrionIcon name="x" size={17} /></button></header>
-
-        {workspaceSuggestion && <section className="context-card workspace-proposal"><div className="card-heading"><span>Workspace proposal</span><OrionIcon name="spark" size={16} /></div><p>Orion sees a sustained planning thread. Create <strong>{workspaceSuggestion}</strong> for this context?</p><div><button onClick={approveWorkspace}>Create workspace</button><button onClick={() => setWorkspaceSuggestion(null)}>Dismiss</button></div></section>}
 
         <section className="context-card memory-card">
           <div className="card-heading"><span>Memory in use</span><img className="card-asset" src="/assets/memory-vault.svg" alt="" /></div>
@@ -1132,7 +1152,7 @@ function App() {
         </section>
       </div>}
       {workspaceOpen && <div className="modal-backdrop" role="presentation">
-        <section className="delete-modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspace-title"><header><div><p className="eyebrow">Context organisation</p><h2 id="workspace-title">Create workspace</h2></div><button className="icon-button" onClick={() => setWorkspaceOpen(false)} title="Close workspace"><OrionIcon name="x" size={18} /></button></header><form className="utility-form" onSubmit={createWorkspace}><input autoFocus value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Workspace name" maxLength={40} /><button type="submit">Create</button></form></section>
+        <section className="delete-modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspace-title"><header><div><p className="eyebrow">Your categories</p><h2 id="workspace-title">Create category</h2></div><button className="icon-button" onClick={() => { setWorkspaceError(''); setWorkspaceOpen(false) }} title="Close category creator"><OrionIcon name="x" size={18} /></button></header><form className="category-form" onSubmit={createWorkspace}><label><span>Name</span><input type="text" autoFocus value={workspaceName} onChange={(event) => { setWorkspaceName(event.target.value); setWorkspaceError('') }} placeholder="Category name" maxLength={40} /></label><label><span>Color</span><div className="color-control"><input type="color" value={workspaceColor} onChange={(event) => setWorkspaceColor(event.target.value)} aria-label="Category color" /><output style={{ color: workspaceColor }}>{workspaceColor.toUpperCase()}</output></div></label>{workspaceError && <p className="form-error" role="alert">{workspaceError}</p>}<button type="submit">Create category</button></form></section>
       </div>}
       {pendingDelete && <div className="modal-backdrop" role="presentation">
         <section className="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
