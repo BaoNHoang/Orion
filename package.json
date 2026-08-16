@@ -19,7 +19,7 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "@emnapi/core": "^2.0.0-alpha.3",
+    "@emnapi/core": "^2.0.0-alpha.4",
     "@emnapi/runtime": "^2.0.0-alpha.3",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
