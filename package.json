@@ -21,7 +21,7 @@
   "devDependencies": {
     "@emnapi/core": "^2.0.0-alpha.3",
     "@emnapi/runtime": "^2.0.0-alpha.3",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.185.3",
